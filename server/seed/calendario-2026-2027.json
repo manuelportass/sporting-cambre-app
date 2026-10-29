@@ -1,0 +1,212 @@
+{
+ "competition": "Primera Futgal, Grupo 2",
+ "season": "2026/2027",
+ "source": "Calendario de Competiciones RFGF (PDF facilitado por el preparador)",
+ "team": "SPORTING CAMBRE",
+ "fixtures": [
+  {
+   "matchday": 1,
+   "date": "2026-09-06",
+   "home_away": "local",
+   "opponent": "S.D. CACHEIRAS"
+  },
+  {
+   "matchday": 2,
+   "date": "2026-09-13",
+   "home_away": "visitante",
+   "opponent": "RACING SAN LORENZO"
+  },
+  {
+   "matchday": 3,
+   "date": "2026-09-20",
+   "home_away": "local",
+   "opponent": "S.D. LUAÑA"
+  },
+  {
+   "matchday": 4,
+   "date": "2026-09-27",
+   "home_away": "visitante",
+   "opponent": "SPORTING MEICENDE"
+  },
+  {
+   "matchday": 5,
+   "date": "2026-10-04",
+   "home_away": "local",
+   "opponent": "CLUB DO MAR"
+  },
+  {
+   "matchday": 6,
+   "date": "2026-10-11",
+   "home_away": "visitante",
+   "opponent": "VIZOÑO S.D."
+  },
+  {
+   "matchday": 7,
+   "date": "2026-10-18",
+   "home_away": "visitante",
+   "opponent": "BOIMORTO C.F."
+  },
+  {
+   "matchday": 8,
+   "date": "2026-10-25",
+   "home_away": "local",
+   "opponent": "PRAIÑA SPORTING CLUB"
+  },
+  {
+   "matchday": 9,
+   "date": "2026-11-01",
+   "home_away": "visitante",
+   "opponent": "S.R. CALO"
+  },
+  {
+   "matchday": 10,
+   "date": "2026-11-08",
+   "home_away": "local",
+   "opponent": "CCD QUEIXAS"
+  },
+  {
+   "matchday": 11,
+   "date": "2026-11-15",
+   "home_away": "visitante",
+   "opponent": "BASTAVALES U.D."
+  },
+  {
+   "matchday": 12,
+   "date": "2026-11-22",
+   "home_away": "local",
+   "opponent": "MUXIA C.F."
+  },
+  {
+   "matchday": 13,
+   "date": "2026-11-29",
+   "home_away": "visitante",
+   "opponent": "BERTAMIRANS F.C."
+  },
+  {
+   "matchday": 14,
+   "date": "2026-12-06",
+   "home_away": "local",
+   "opponent": "XALLAS F.C."
+  },
+  {
+   "matchday": 15,
+   "date": "2026-12-13",
+   "home_away": "visitante",
+   "opponent": "S.D. TORDOIA"
+  },
+  {
+   "matchday": 16,
+   "date": "2026-12-20",
+   "home_away": "local",
+   "opponent": "S. D. SAN LORENZO"
+  },
+  {
+   "matchday": 17,
+   "date": "2027-01-10",
+   "home_away": "visitante",
+   "opponent": "S.D. CASTRIZ"
+  },
+  {
+   "matchday": 18,
+   "date": "2027-01-17",
+   "home_away": "visitante",
+   "opponent": "S.D. CACHEIRAS"
+  },
+  {
+   "matchday": 19,
+   "date": "2027-01-24",
+   "home_away": "local",
+   "opponent": "RACING SAN LORENZO"
+  },
+  {
+   "matchday": 20,
+   "date": "2027-01-31",
+   "home_away": "visitante",
+   "opponent": "S.D. LUAÑA"
+  },
+  {
+   "matchday": 21,
+   "date": "2027-02-07",
+   "home_away": "local",
+   "opponent": "SPORTING MEICENDE"
+  },
+  {
+   "matchday": 22,
+   "date": "2027-02-14",
+   "home_away": "visitante",
+   "opponent": "CLUB DO MAR"
+  },
+  {
+   "matchday": 23,
+   "date": "2027-02-21",
+   "home_away": "local",
+   "opponent": "VIZOÑO S.D."
+  },
+  {
+   "matchday": 24,
+   "date": "2027-02-28",
+   "home_away": "local",
+   "opponent": "BOIMORTO C.F."
+  },
+  {
+   "matchday": 25,
+   "date": "2027-03-07",
+   "home_away": "visitante",
+   "opponent": "PRAIÑA SPORTING CLUB"
+  },
+  {
+   "matchday": 26,
+   "date": "2027-03-14",
+   "home_away": "local",
+   "opponent": "S.R. CALO"
+  },
+  {
+   "matchday": 27,
+   "date": "2027-03-21",
+   "home_away": "visitante",
+   "opponent": "CCD QUEIXAS"
+  },
+  {
+   "matchday": 28,
+   "date": "2027-04-04",
+   "home_away": "local",
+   "opponent": "BASTAVALES U.D."
+  },
+  {
+   "matchday": 29,
+   "date": "2027-04-11",
+   "home_away": "visitante",
+   "opponent": "MUXIA C.F."
+  },
+  {
+   "matchday": 30,
+   "date": "2027-04-18",
+   "home_away": "local",
+   "opponent": "BERTAMIRANS F.C."
+  },
+  {
+   "matchday": 31,
+   "date": "2027-04-25",
+   "home_away": "visitante",
+   "opponent": "XALLAS F.C."
+  },
+  {
+   "matchday": 32,
+   "date": "2027-05-02",
+   "home_away": "local",
+   "opponent": "S.D. TORDOIA"
+  },
+  {
+   "matchday": 33,
+   "date": "2027-05-09",
+   "home_away": "visitante",
+   "opponent": "S. D. SAN LORENZO"
+  },
+  {
+   "matchday": 34,
+   "date": "2027-05-16",
+   "home_away": "local",
+   "opponent": "S.D. CASTRIZ"
+  }
+ ]
+}

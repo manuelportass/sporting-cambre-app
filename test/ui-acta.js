@@ -1,0 +1,40 @@
+'use strict';
+// Importación de un acta PDF real (Futgal) en la versión de prueba (HTML único, CSP estricta).
+const fs = require('fs'), path = require('path'), http = require('http');
+const { chromium } = require('playwright');
+const out = path.resolve(process.argv[2] || 'shots-acta'); fs.mkdirSync(out, { recursive: true });
+const pdf = process.argv[3];
+let html = fs.readFileSync(path.join(__dirname, '..', 'client', 'dist-demo', 'demo.html'), 'utf8');
+const CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; img-src data: blob:; connect-src 'none'; worker-src blob:";
+html = html.replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${CSP}">`);
+const server = http.createServer((q, r) => { r.setHeader('content-type', 'text/html; charset=utf-8'); r.end(html); }).listen(0);
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1360, height: 900 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push('[pageerror] ' + e.message));
+  page.on('console', m => m.type() === 'error' && errors.push('[console] ' + m.text()));
+  const shot = async (n, full = true) => { await page.waitForTimeout(500); await page.screenshot({ path: path.join(out, n + '.png'), fullPage: full }); };
+  await page.goto(`http://127.0.0.1:${server.address().port}/a`); await page.waitForSelector('.tile', { timeout: 60000 });
+  await page.click('nav >> text=Jugadores'); await page.click('button[aria-label="Más opciones"]'); await page.click('button:has-text("Cargar listado 2026/27")');
+  await page.click('button:has-text("Crear franjas y ver vista previa")'); await page.click('button:has-text("Guardar 105")'); await page.waitForSelector('text=105 de 105');
+  await page.click('nav >> text=Primer equipo'); await page.click('.tile:has-text("Partidos")'); await page.click('.tabs button:has-text("Importar")');
+  await shot('01-importar');
+  await page.click('.tile:has-text("Actas en PDF")');
+  const t0 = Date.now();
+  await page.setInputFiles('input[type=file][accept*=pdf]', pdf);
+  await page.waitForSelector('text=Confirmar y guardar', { timeout: 60000 });
+  console.log('Lectura del acta:', Date.now() - t0, 'ms');
+  await shot('02-vista-previa');
+  const sel = page.locator('select').filter({ has: page.locator('option[value="new"]') });
+  const n = await sel.count(); let assoc = 0, unassoc = [];
+  for (let i = 0; i < n; i++) { const v = await sel.nth(i).inputValue(); if (v) assoc++; else unassoc.push(i); }
+  console.log('Asociados:', assoc, 'sin asociar:', unassoc.length);
+  for (const i of unassoc) await sel.nth(i).selectOption('new');
+  await page.click('button:has-text("Confirmar y guardar")'); await page.waitForSelector('.lrow', { timeout: 30000 }); await shot('03-partidos');
+  await page.locator('.lrow').first().click(); await page.waitForSelector('text=Acta:'); await shot('04-partido', false);
+  await page.keyboard.press('Escape');
+  await page.click('.tabs button:has-text("Jugadores")'); await page.waitForTimeout(600); await shot('05-estadisticas');
+  await browser.close(); server.close();
+  console.log(errors.length ? 'ERRORES:\n' + errors.join('\n') : 'Sin errores.');
+})().catch(e => { console.error(e); server.close(); process.exit(1); });

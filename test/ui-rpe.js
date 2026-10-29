@@ -1,0 +1,27 @@
+'use strict';
+const fs = require('fs'), path = require('path'), http = require('http');
+const { chromium } = require('playwright');
+const out = path.resolve(process.argv[2] || 'shots-rpe'); fs.mkdirSync(out, { recursive: true });
+const html = fs.readFileSync(path.join(__dirname, '..', 'client', 'dist-demo', 'demo.html'), 'utf8');
+const server = http.createServer((q, r) => { r.setHeader('content-type', 'text/html; charset=utf-8'); r.end(html); }).listen(0);
+(async () => {
+  const base = `http://127.0.0.1:${server.address().port}/artifact`;
+  const browser = await chromium.launch(); const errors = [];
+  const page = await (await browser.newContext({ viewport: { width: 1360, height: 900 }, locale: 'es-ES' })).newPage();
+  page.on('pageerror', e => errors.push(e.message)); page.on('console', m => m.type() === 'error' && errors.push(m.text()));
+  const shot = async n => { await page.waitForTimeout(500); await page.screenshot({ path: path.join(out, n + '.png'), fullPage: true }); };
+  await page.goto(base); await page.waitForSelector('.tile', { timeout: 60000 });
+  await page.click('nav >> text=Jugadores'); await page.click('button[aria-label="Más opciones"]'); await page.click('button:has-text("Cargar listado 2026/27")');
+  await page.click('button:has-text("Crear franjas y ver vista previa")'); await page.waitForSelector('text=Guardar 105');
+  await page.click('button:has-text("Guardar 105")'); await page.waitForSelector('text=105 de 105');
+  await page.click('nav >> text=Primer equipo'); await page.click('.tile:has-text("Sesiones")');
+  await page.click('button[aria-label="Más opciones"]'); await page.click('button:has-text("Importar histórico de RPE")');
+  await page.waitForTimeout(3000); await shot('01-modal');
+  await page.click('.modal button:has-text("Importar")'); await page.waitForSelector('text=RPE medio', { timeout: 60000 }); await shot('02-lista');
+  await page.locator('.list > *').first().click(); await page.waitForSelector('text=Minutos medios'); await shot('03-detalle');
+  await page.locator('.modal button[aria-label="Más opciones"]').click(); await page.click('button:has-text("Sin RPE → ausentes")'); await page.waitForTimeout(800); await shot('04-ausentes');
+  const pend = await page.locator('.modal >> text=Pendiente').count();
+  await page.click('.modal button:has-text("Cerrar")');
+  await page.click('nav >> text=Primer equipo'); await page.click('.tile:has-text("Plantilla")').catch(() => {}); await shot('05-plantilla');
+  console.log('pendientes tras acción:', pend, 'errores:', errors); await browser.close(); server.close();
+})().catch(e => { console.error(e); process.exit(1); });

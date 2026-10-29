@@ -1,0 +1,714 @@
+{
+ "season": "2026/2027",
+ "source": "Preparación Física Base Temporada 2026-2027 (PDF) y listado del equipo modesto facilitados por el preparador físico · Listado completo de base facilitado el 27/10/2026 (infantiles 26, cadetes 32, juveniles 25).",
+ "slots": [
+  {
+   "weekday": 2,
+   "start_time": "18:00",
+   "end_time": "18:50",
+   "category": "infantil",
+   "label": null
+  },
+  {
+   "weekday": 2,
+   "start_time": "19:00",
+   "end_time": "19:50",
+   "category": "juvenil",
+   "label": "Juvenil B"
+  },
+  {
+   "weekday": 2,
+   "start_time": "20:00",
+   "end_time": "20:50",
+   "category": "cadete",
+   "label": null
+  },
+  {
+   "weekday": 4,
+   "start_time": "18:00",
+   "end_time": "18:50",
+   "category": "cadete",
+   "label": null
+  },
+  {
+   "weekday": 4,
+   "start_time": "19:00",
+   "end_time": "19:50",
+   "category": "juvenil",
+   "label": "Juvenil A"
+  },
+  {
+   "weekday": 4,
+   "start_time": "20:00",
+   "end_time": "20:50",
+   "category": "infantil",
+   "label": null
+  }
+ ],
+ "pending": [
+  "Sin franja de gimnasio: 4 infantiles y 7 cadetes del listado completo. Asígnalos en Gimnasio → «Sin franja asignada».",
+  "Juveniles sin grupo A/B en los listados: Aitor Paz, Arturo Bermúdez Prieto, Gonzalo Castro Lendoiro, Manuel Sánchez Zas, Marc Ares."
+ ],
+ "players": [
+  {
+   "first_name": "Saúl",
+   "last_name": "Castiñeiras Fernández",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "André",
+   "last_name": "Bacelo Muiño",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Iker",
+   "last_name": "López Cernadas",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Javier",
+   "last_name": "Pérez Sánchez",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Roque",
+   "last_name": "Diaz",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Paolo",
+   "last_name": "Jalón Pérez",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Xandre",
+   "last_name": "Platas",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Lucas",
+   "last_name": "España Penide",
+   "category": "infantil",
+   "weekday": 2,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Óscar",
+   "last_name": "Iglesias Vázquez",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Iago",
+   "last_name": "Villarino López",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Alejandra",
+   "last_name": "López Núñez",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Gabriel",
+   "last_name": "Maneiro Marcos",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Candela",
+   "last_name": "Villar",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Mateo",
+   "last_name": "Goncalvez",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Alex",
+   "last_name": "Méndez Ares",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Guillermo",
+   "last_name": "Alonso del Barrio Ramos",
+   "category": "cadete",
+   "weekday": 2,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "David",
+   "last_name": "Portela Rouco",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Mario",
+   "last_name": "Portela Rouco",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Carlos",
+   "last_name": "Baizan",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Braulio",
+   "last_name": "Campelo",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Octavio",
+   "last_name": "Lorenzo Hernández",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Mateo Alexander",
+   "last_name": "Uceda Represas",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Iker",
+   "last_name": "Tueros Arias",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Giuliano",
+   "last_name": "Núñez Sturabotti",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Joao Pedro",
+   "last_name": "da Silva Soares",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Izan",
+   "last_name": "Viejo González",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Victor",
+   "last_name": "Querentes Otero",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Oscar",
+   "last_name": "Fernández",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Lois",
+   "last_name": "Maneiro Mayán",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Javier",
+   "last_name": "Moar",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Pedro",
+   "last_name": "Figueira Navia",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Mateo",
+   "last_name": "Díaz Regueiro",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Iago",
+   "last_name": "Abalde Bouza",
+   "category": "cadete",
+   "weekday": 4,
+   "start_time": "18:00"
+  },
+  {
+   "first_name": "Martín",
+   "last_name": "Abruñedo Varela",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Moisés",
+   "last_name": "Otero Nuñez",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Darío",
+   "last_name": "Fraga Vázquez",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Antón",
+   "last_name": "Andrade",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Romeo",
+   "last_name": "Mazzarella",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Martín",
+   "last_name": "Pose García",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Raúl",
+   "last_name": "Franco Soto",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Luis",
+   "last_name": "Lamas Pérez",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Romeo",
+   "last_name": "Martínez Sánchez",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Martín",
+   "last_name": "González García",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Xabier",
+   "last_name": "Sánchez Maceiras",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Jorge",
+   "last_name": "Fraga Gómez",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Manuel",
+   "last_name": "Arnejo Gómez",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Rodrigo",
+   "last_name": "Grela Doce",
+   "category": "infantil",
+   "weekday": 4,
+   "start_time": "20:00"
+  },
+  {
+   "first_name": "Bruno",
+   "last_name": "González",
+   "category": "senior"
+  },
+  {
+   "first_name": "Dan",
+   "last_name": "Mallo",
+   "category": "senior"
+  },
+  {
+   "first_name": "Daniel",
+   "last_name": "Piñeiro",
+   "category": "senior"
+  },
+  {
+   "first_name": "David",
+   "last_name": "Fernández",
+   "category": "senior"
+  },
+  {
+   "first_name": "Diego",
+   "last_name": "López",
+   "category": "senior"
+  },
+  {
+   "first_name": "Gonzalo",
+   "last_name": "Mallo",
+   "category": "senior"
+  },
+  {
+   "first_name": "Hugo",
+   "last_name": "García",
+   "category": "senior"
+  },
+  {
+   "first_name": "Hugo",
+   "last_name": "González",
+   "category": "senior"
+  },
+  {
+   "first_name": "Javier",
+   "last_name": "González",
+   "category": "senior"
+  },
+  {
+   "first_name": "Johansy",
+   "last_name": "Pérez",
+   "category": "senior"
+  },
+  {
+   "first_name": "José",
+   "last_name": "Ares",
+   "category": "senior",
+   "notes": "Conocido como «Chema»."
+  },
+  {
+   "first_name": "Lucas",
+   "last_name": "Meijide",
+   "category": "senior"
+  },
+  {
+   "first_name": "Lucas",
+   "last_name": "Pires",
+   "category": "senior"
+  },
+  {
+   "first_name": "Marco",
+   "last_name": "Castro",
+   "category": "senior"
+  },
+  {
+   "first_name": "Miguel A.",
+   "last_name": "Eiriz",
+   "category": "senior"
+  },
+  {
+   "first_name": "Miguel",
+   "last_name": "Iglesias",
+   "category": "senior"
+  },
+  {
+   "first_name": "Nano",
+   "last_name": "Fernández",
+   "category": "senior"
+  },
+  {
+   "first_name": "Pablo",
+   "last_name": "Ferrer",
+   "category": "senior"
+  },
+  {
+   "first_name": "Pablo",
+   "last_name": "Garaboa",
+   "category": "senior"
+  },
+  {
+   "first_name": "Pedro",
+   "last_name": "Sánchez",
+   "category": "senior"
+  },
+  {
+   "first_name": "Rubén",
+   "last_name": "Santiso",
+   "category": "senior"
+  },
+  {
+   "first_name": "Sergio",
+   "last_name": "Rebolo",
+   "category": "senior"
+  },
+  {
+   "first_name": "Abraham",
+   "last_name": "González García",
+   "category": "infantil"
+  },
+  {
+   "first_name": "César",
+   "last_name": "Seoane Laya",
+   "category": "infantil"
+  },
+  {
+   "first_name": "Léo",
+   "last_name": "Cacheiro Miguez",
+   "category": "infantil"
+  },
+  {
+   "first_name": "Xalo",
+   "last_name": "",
+   "category": "infantil"
+  },
+  {
+   "first_name": "Álvaro",
+   "last_name": "Reboredo López",
+   "category": "cadete"
+  },
+  {
+   "first_name": "Atzin",
+   "last_name": "Camacho Villarino",
+   "category": "cadete"
+  },
+  {
+   "first_name": "Fabrizio Andrés",
+   "last_name": "Castro Garcia",
+   "category": "cadete"
+  },
+  {
+   "first_name": "Hugo",
+   "last_name": "Santiso Bermúdez",
+   "category": "cadete"
+  },
+  {
+   "first_name": "Marc",
+   "last_name": "Fernández Martínez",
+   "category": "cadete"
+  },
+  {
+   "first_name": "Roi",
+   "last_name": "Bellón Torres",
+   "category": "cadete"
+  },
+  {
+   "first_name": "Samuel",
+   "last_name": "Gracia Lastra",
+   "category": "cadete"
+  },
+  {
+   "first_name": "Aitor",
+   "last_name": "Paz",
+   "category": "juvenil"
+  },
+  {
+   "first_name": "Anxo",
+   "last_name": "Navarrete Pérez",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Arturo",
+   "last_name": "Bermúdez Prieto",
+   "category": "juvenil"
+  },
+  {
+   "first_name": "Brais",
+   "last_name": "García Suárez",
+   "category": "juvenil",
+   "weekday": 2,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Diego",
+   "last_name": "Vázquez Regueira",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Enrique",
+   "last_name": "Castaño Castro",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Gonzalo",
+   "last_name": "Castro Lendoiro",
+   "category": "juvenil"
+  },
+  {
+   "first_name": "Gorka",
+   "last_name": "Méndez",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Guillermo",
+   "last_name": "Castro Moure",
+   "category": "juvenil",
+   "weekday": 2,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Iago",
+   "last_name": "Casal Rivas",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Iago",
+   "last_name": "Herosa",
+   "category": "juvenil",
+   "weekday": 2,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Isaac",
+   "last_name": "Iglesias Villar",
+   "category": "juvenil",
+   "weekday": 2,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Luca",
+   "last_name": "López Canzobre",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Manuel",
+   "last_name": "Sánchez Zas",
+   "category": "juvenil"
+  },
+  {
+   "first_name": "Marc",
+   "last_name": "Ares",
+   "category": "juvenil"
+  },
+  {
+   "first_name": "Mateo",
+   "last_name": "Anido",
+   "category": "juvenil",
+   "weekday": 2,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Mateo",
+   "last_name": "García Pedreira",
+   "category": "juvenil",
+   "weekday": 2,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Pablo",
+   "last_name": "Cortés Souto",
+   "category": "juvenil",
+   "weekday": 2,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Rodrigo",
+   "last_name": "González Gutiérrez",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Rodrigo",
+   "last_name": "Valencia Germade",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Samuel",
+   "last_name": "Ríos",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Saúl",
+   "last_name": "Val Parga",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Xabier",
+   "last_name": "Tueros Arias",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Xoel",
+   "last_name": "Moure Cernadas",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  },
+  {
+   "first_name": "Yago",
+   "last_name": "Barral Bermejo",
+   "category": "juvenil",
+   "weekday": 4,
+   "start_time": "19:00"
+  }
+ ]
+}

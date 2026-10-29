@@ -1,0 +1,30 @@
+# Despliegue en Render (https://render.com) · Blueprint
+# Servicio web siempre encendido en Frankfurt (UE) con disco persistente para la base de datos,
+# las fotos, los documentos y las claves de los avisos push.
+services:
+  - type: web
+    name: sporting-cambre
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: datos
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: VAPID_SUBJECT
+        value: mailto:preparador@sportingcambre.es
+      # Código de 6 cifras para crear la cuenta del preparador la primera vez (lo eliges tú al crear el servicio)
+      - key: SETUP_CODE
+        sync: false
