@@ -666,3 +666,6 @@ i.dash { display: inline-block; width: 14px; border-top: 2px dashed #111511; ver
 .setup-help { background: #f6f6f3; border-radius: 8px; padding: 6px 8px; color: var(--ink-2) !important; }
 .setup-n { width: 24px; height: 24px; border-radius: 50%; background: #ecede8; color: var(--ink-2); display: flex; align-items: center; justify-content: center; font: 700 13px var(--head); flex: none; }
 .setup-n.ok { background: var(--verde); color: #fff; }
+.photobox { display: flex; flex-direction: column; gap: 10px; }
+.pb-img { width: 96px; height: 128px; border-radius: 12px; background: #f6f6f3; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); }
+.pb-img img { width: 100%; height: 100%; object-fit: cover; }

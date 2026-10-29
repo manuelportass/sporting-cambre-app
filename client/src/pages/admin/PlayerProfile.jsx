@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { normalizePlayerPhoto } from '../../lib/files';
 import { api } from '../../api';
 import { Avatar, Confirm, Empty, ErrorBox, ListRow, Loading, MoreMenu, PageHead, Tabs, useApi, useToast, ColorBadge } from '../../components/ui';
 import PlayerForm from '../../components/PlayerForm';
@@ -24,7 +25,7 @@ export default function PlayerProfile() {
   if (p.error) return <ErrorBox error={p.error} />;
   const d = p.data;
   const reload = () => { p.reload(); audit.reload(); };
-  const uploadPhoto = async f => { try { await api.upload(`/players/${id}/photo`, f); toast('Fotografía actualizada'); reload(); } catch (e) { toast(e.message, 'err'); } };
+  const uploadPhoto = async f => { try { await api.upload(`/players/${id}/photo`, await normalizePlayerPhoto(f)); toast('Fotografía actualizada'); reload(); } catch (e) { toast(e.message, 'err'); } };
   const removePhoto = async () => { try { await api.del(`/players/${id}/photo`); toast('Fotografía eliminada'); reload(); } catch (e) { toast(e.message, 'err'); } };
   const toggleActive = async () => { try { await api.put('/players/' + id, { active: !d.active }); toast(d.active ? 'Jugador desactivado' : 'Jugador reactivado'); reload(); } catch (e) { toast(e.message, 'err'); } };
   const exportData = async () => {

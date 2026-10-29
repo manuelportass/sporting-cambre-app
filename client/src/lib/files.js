@@ -140,3 +140,19 @@ export async function exportPDF({ title, subtitle, meta = [], sections = [], fil
   }
   return saveBlob(doc.output('blob'), filename);
 }
+
+// Ajusta una foto al formato de las fotos editadas del primer equipo (3:4, 600 × 800 px, JPEG):
+// la recorta por el centro si hace falta, rellena con blanco y la reduce para que pese poco.
+export async function normalizePlayerPhoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; await img.decode();
+    const W = 600, H = 800, r = W / H;
+    let sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0;
+    if (sw / sh > r) { const nw = sh * r; sx = (sw - nw) / 2; sw = nw; } else if (sw / sh < r) { const nh = sw / r; sy = (sh - nh) / 2; sh = nh; }
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+    const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.82));
+    return new File([blob], (file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } finally { URL.revokeObjectURL(url); }
+}

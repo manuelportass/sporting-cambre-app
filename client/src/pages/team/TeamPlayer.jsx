@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../api';
-import { ColorBadge, Empty, ErrorBox, Field, Loading, Modal, MoreMenu, PageHead, Pending, Seg, Tabs, show, useApi, useToast } from '../../components/ui';
+import { ColorBadge, Confirm, Empty, ErrorBox, Field, FileButton, Loading, Modal, MoreMenu, PageHead, Pending, Seg, Tabs, show, useApi, useToast } from '../../components/ui';
+import { fileUrl } from '../../api';
+import { normalizePlayerPhoto } from '../../lib/files';
 import { AcuteChronicChart, AcwrChart, DailyLoadChart, MatchMinutesChart, MultiLine, WEEK_PARTS, WeeklyStackChart } from '../../components/charts';
 import { ATT_LABEL, AVAIL_COLOR, COLOR_HEX, COLOR_LABEL, INJ_COLOR, INJ_STATUS, addDays, fmtDate, fmtDateTime, fmtNum, mondayOf, posGroup, todayISO } from '../../lib/format';
 
@@ -249,6 +251,29 @@ function TestsTab({ tests }) {
   })}</div>;
 }
 
+// Foto del jugador (solo el preparador puede cambiarla). Se ajusta sola al formato de las demás (3:4).
+function PhotoBox({ p, reload }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [del, setDel] = useState(false);
+  const up = async f => {
+    setBusy(true);
+    try { await api.upload(`/players/${p.id}/photo`, await normalizePlayerPhoto(f)); toast('Foto actualizada'); reload(); }
+    catch (e) { toast(e.message || 'No se pudo subir la foto', 'err'); } finally { setBusy(false); }
+  };
+  return <div className="card photobox"><h3 style={{ margin: 0 }}>Foto del jugador</h3>
+    <div className="row" style={{ gap: 16, alignItems: 'center', flexWrap: 'nowrap' }}>
+      <span className="pb-img">{p.photo_file_id ? <img src={fileUrl(p.photo_file_id)} alt="" /> : <span className="muted small">Sin foto</span>}</span>
+      <div className="stack" style={{ gap: 8 }}>
+        <span className="small muted">Se ajusta sola al formato de las demás fotos (vertical 3:4). Es la que el jugador ve en su pantalla de inicio.</span>
+        <div className="row" style={{ gap: 8 }}>
+          <FileButton className="btn primary sm" accept="image/*" onFile={up}>{busy ? 'Subiendo…' : p.photo_file_id ? 'Cambiar foto' : 'Subir foto'}</FileButton>
+          {p.photo_file_id && <button className="btn sm ghost" disabled={busy} onClick={() => setDel(true)}>Quitar</button>}</div>
+      </div></div>
+    {del && <Confirm title="Quitar foto" danger confirmText="Quitar" message="El jugador verá el escudo en lugar de su foto." onConfirm={async () => { await api.del(`/players/${p.id}/photo`); toast('Foto eliminada'); reload(); }} onClose={() => setDel(false)} />}
+  </div>;
+}
+
 // Peso corporal: se registra como test para ver su evolución durante la temporada
 function WeightBox({ data, reload }) {
   const toast = useToast();
@@ -303,6 +328,7 @@ function GeneralTab({ data, reload }) {
       <button className="btn primary" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={save}>{busy ? 'Guardando…' : 'Guardar ficha'}</button>
     </div>
     <div className="stack" style={{ gap: 14 }}>
+      <PhotoBox p={p} reload={reload} />
       <WeightBox data={data} reload={reload} />
       <div className="card"><h3>Historial de lesiones</h3>{!data.injuries.length ? <p className="muted small">Sin lesiones registradas.</p> : data.injuries.map(i => <div key={i.id} className="row small" style={{ borderBottom: '1px solid var(--line)', padding: '5px 0' }}>
         <Link to={'/lesiones/' + i.id}>{fmtDate(i.injury_date)} · {i.zone || 'Lesión'}{i.laterality ? ` (${i.laterality})` : ''}</Link><span className="spacer" /><ColorBadge color={INJ_COLOR[i.status]}>{INJ_STATUS[i.status]}</ColorBadge></div>)}</div>
