@@ -11,7 +11,7 @@ export default function PlayerForm({ player, onClose, onSaved }) {
   const settings = useApi('/settings');
   const [v, setV] = useState(() => ({
     first_name: player?.first_name || '', last_name: player?.last_name || '', category_id: player?.category_id || '',
-    position: player?.position || '', dominant_leg: player?.dominant_leg || '', joined_at: player?.joined_at || '', notes: player?.notes || '',
+    position: player?.position || '', dominant_leg: player?.dominant_leg || '', sex: player?.sex || '', nickname: player?.nickname || '', joined_at: player?.joined_at || '', notes: player?.notes || '',
     slot_ids: player?.slots?.map(s => s.id) || player?.slot_ids || [],
     custom: player?.custom || {},
     private: { birth_date: player?.private?.birth_date || '', weight_kg: player?.private?.weight_kg ?? '', height_cm: player?.private?.height_cm ?? '', anthropometry: player?.private?.anthropometry || '', sports_history: player?.private?.sports_history || '' },
@@ -26,7 +26,7 @@ export default function PlayerForm({ player, onClose, onSaved }) {
 
   const save = async allowDuplicate => {
     setBusy(true); setErr(null);
-    const body = { ...v, category_id: v.category_id || null, dominant_leg: v.dominant_leg || null, joined_at: v.joined_at || null, allowDuplicate };
+    const body = { ...v, category_id: v.category_id || null, dominant_leg: v.dominant_leg || null, sex: v.sex || null, nickname: (v.nickname || '').trim() || null, joined_at: v.joined_at || null, allowDuplicate };
     try {
       const r = player ? await api.put('/players/' + player.id, body) : await api.post('/players', body);
       toast(player ? 'Jugador actualizado' : 'Jugador creado');
@@ -46,6 +46,8 @@ export default function PlayerForm({ player, onClose, onSaved }) {
         <Field label="Categoría"><select value={v.category_id} onChange={e => set('category_id', e.target.value)}><option value="">Pendiente</option>{cats.data?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
         <Field label="Fecha de incorporación"><input type="date" value={v.joined_at} onChange={e => set('joined_at', e.target.value)} /></Field>
         <Field label="Posición habitual"><input type="text" value={v.position} onChange={e => set('position', e.target.value)} placeholder="p. ej. Lateral derecho" /></Field>
+        <Field label="Apodo" hint="saludo de su app"><input type="text" maxLength={40} value={v.nickname} onChange={e => set('nickname', e.target.value)} /></Field>
+        <Field label="Sexo"><select value={v.sex} onChange={e => set('sex', e.target.value)}><option value="">Pendiente</option><option value="M">Masculino</option><option value="F">Femenino</option></select></Field>
         <Field label="Pierna dominante"><select value={v.dominant_leg} onChange={e => set('dominant_leg', e.target.value)}><option value="">Pendiente</option><option value="derecha">Derecha</option><option value="izquierda">Izquierda</option><option value="ambas">Ambas</option></select></Field>
       </div>
       {catCode !== 'senior' && <div>

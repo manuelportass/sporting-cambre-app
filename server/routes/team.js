@@ -7,6 +7,8 @@ const L = require('../lib/load');
 const T = require('../lib/team');
 const { h, bad, notFound, reqDate, optText, reqText, num, oneOf, today, isoWeekday, HttpError } = require('../lib/util');
 const { STATUS_LABEL } = require('./injuries');
+const VO2 = require('../lib/vo2');
+const F = require('../lib/fines');
 
 const r = express.Router();
 r.use(A.requireAdmin);
@@ -188,6 +190,35 @@ r.post('/wellness/:id/void', h((req, res) => {
   res.json({ ok: true });
 }));
 
+// RPE por sesión de entrenamiento (respuestas de los jugadores). Los rellenos automáticos no cuentan en la media.
+r.get('/rpe-overview', h((req, res) => {
+  const from = reqDate(req.query.from), to = reqDate(req.query.to) > today() ? today() : reqDate(req.query.to);
+  const st = settings();
+  const days = new Set();
+  db.prepare("SELECT date FROM team_sessions WHERE session_type!='Partido' AND date BETWEEN ? AND ?").all(from, to).forEach(x => days.add(x.date));
+  db.prepare("SELECT DISTINCT date FROM load_entries WHERE kind='colectivo' AND status='valido' AND date BETWEEN ? AND ?").all(from, to).forEach(x => days.add(x.date));
+  for (let d = from; d <= to; d = L.addDays(d, 1)) if (st.collectiveDays.includes(isoWeekday(d)) && !db.prepare("SELECT 1 FROM team_sessions WHERE date=? AND session_type='Partido'").get(d)) days.add(d);
+  const players = T.seniorPlayers();
+  const out = [...days].sort().reverse().map(date => {
+    const ses = db.prepare("SELECT * FROM team_sessions WHERE date=? AND session_type!='Partido' ORDER BY id LIMIT 1").get(date);
+    const entries = [], missing = [];
+    for (const p of players) {
+      const e = db.prepare("SELECT * FROM load_entries WHERE player_id=? AND date=? AND kind='colectivo' AND status='valido' ORDER BY id DESC LIMIT 1").get(p.id, date);
+      if (e) entries.push({ player_id: p.id, name: fullName(p), photo_file_id: p.photo_file_id, rpe: e.rpe, duration: e.duration_min, load: e.load_au, fill: e.notes === 'Relleno automático' });
+      else {
+        const att = ses && db.prepare('SELECT status FROM team_attendance WHERE session_id=? AND player_id=?').get(ses.id, p.id)?.status;
+        const av = T.availability(p, date);
+        missing.push({ player_id: p.id, name: fullName(p), reason: av.code === 'no_disponible' ? 'lesionado' : att && att !== 'presente' ? att : null });
+      }
+    }
+    const real = entries.filter(e => !e.fill);
+    const avg = real.length ? Math.round(real.reduce((a, e) => a + e.rpe, 0) / real.length * 10) / 10 : null;
+    return { date, session_type: ses?.session_type || 'Entrenamiento', planned_minutes: ses?.planned_minutes ?? null, avg_rpe: avg, n: real.length, fills: entries.length - real.length,
+      expected: players.length - missing.filter(m => m.reason).length, entries: entries.sort((a, b) => b.rpe - a.rpe), missing };
+  });
+  res.json(out);
+}));
+
 // ================= Solicitudes de corrección de jugadores =================
 r.get('/corrections', h((req, res) => {
   const rows = db.prepare(`SELECT c.*, p.first_name, p.last_name FROM correction_requests c JOIN players p ON p.id=c.player_id
@@ -345,9 +376,10 @@ r.get('/players/:id/summary', h((req, res) => {
     FROM match_stats ms JOIN matches m ON m.id=ms.match_id WHERE ms.player_id=? ORDER BY m.date DESC`).all(p.id);
   const tests = db.prepare(`SELECT r.*, t.name, t.fields FROM test_results r JOIN test_types t ON t.id=r.test_type_id WHERE r.player_id=? ORDER BY r.date DESC`).all(p.id)
     .map(x => ({ ...x, fields: JSON.parse(x.fields), values: JSON.parse(x.values_json) }));
+  const testsV = VO2.attach(tests);
   res.json({
     player: { ...p, custom: JSON.parse(p.custom || '{}'), full_name: fullName(p), age: priv.birth_date ? age(priv.birth_date) : (priv.age ?? null), age_input: priv.age ?? null, birth_date: priv.birth_date || null, weight_kg: priv.weight_kg ?? null },
-    availability: T.availability(p), injuries, attendance: att, matches, tests,
+    availability: T.availability(p), injuries, attendance: att, matches, tests: testsV,
     trainings: trainingAttendance(p.id, today(), true), matchesPlayed: matchCount(p.id, today()), stats: seasonStats(p.id, seasonOf(today())),
     seasons: [...new Set(matches.map(m => m.season))],
   });
@@ -762,7 +794,7 @@ r.get('/tests', h((req, res) => {
   if (req.query.from) { sql += ' AND r.date >= @from'; p.from = req.query.from; }
   if (req.query.to) { sql += ' AND r.date <= @to'; p.to = req.query.to; }
   sql += ' ORDER BY r.date DESC, p.last_name';
-  res.json(db.prepare(sql).all(p).map(x => ({ ...x, fields: JSON.parse(x.fields), values: JSON.parse(x.values_json), player_name: fullName(x) })));
+  res.json(VO2.attach(db.prepare(sql).all(p).map(x => ({ ...x, fields: JSON.parse(x.fields), values: JSON.parse(x.values_json), player_name: fullName(x) })), 'test_name'));
 }));
 function cleanResult(b) {
   const type = db.prepare('SELECT * FROM test_types WHERE id=?').get(b.test_type_id);
@@ -770,6 +802,14 @@ function cleanResult(b) {
   const fields = JSON.parse(type.fields);
   const values = {};
   for (const f of fields) values[f.key] = num(b.values?.[f.key], f.label, { min: -1e6, max: 1e6 });
+  // Perímetros: índice cintura-cadera calculado por el servidor
+  if (type.name === 'Perímetros') values.icc = values.cintura && values.cadera ? Math.round(values.cintura / values.cadera * 100) / 100 : null;
+  // 1RM estimado: siempre lo calcula el servidor con la fórmula de Brzycki (1993)
+  if (type.name === 'Sentadilla · 1RM estimado') {
+    if (values.peso == null || values.reps == null) throw bad('Indica el peso levantado y las repeticiones.');
+    if (!Number.isInteger(values.reps) || values.reps < 1 || values.reps > 10) throw bad('Las repeticiones deben estar entre 1 y 10 (la fórmula de Brzycki no es fiable con más).');
+    values.rm = Math.round(values.peso / (1.0278 - 0.0278 * values.reps) * 10) / 10;
+  }
   if (Object.values(values).every(v => v === null)) throw bad('Introduce al menos un resultado.');
   return {
     test_type_id: type.id, player_id: num(b.player_id, 'Jugador', { required: true, int: true }), date: reqDate(b.date),
@@ -802,6 +842,24 @@ r.delete('/tests/:id', h((req, res) => {
   if (!before) throw notFound();
   db.prepare('DELETE FROM test_results WHERE id=?').run(before.id);
   audit('test_result', before.id, 'delete', before, null, req.user.id);
+  res.json({ ok: true });
+}));
+
+// ================= Multas =================
+r.get('/fines', h((req, res) => {
+  F.settle();
+  const s = settings();
+  const list = db.prepare(`SELECT f.*, p.first_name, p.last_name, p.photo_file_id FROM fines f JOIN players p ON p.id=f.player_id ORDER BY f.date DESC, p.last_name`).all()
+    .map(f => ({ ...f, player_name: fullName(f) }));
+  res.json({ config: { ...s.fines, rpeTime: s.notifications?.rpe?.time || '22:00', notificationsEnabled: !!s.notifications?.enabled }, list });
+}));
+r.put('/fines/:id', h((req, res) => {
+  const f = db.prepare('SELECT * FROM fines WHERE id=?').get(req.params.id);
+  if (!f) throw notFound();
+  const status = oneOf(req.body?.status, ['pendiente', 'pagada', 'anulada'], 'Estado');
+  const note = optText(req.body?.note, 500) ?? f.note;
+  db.prepare("UPDATE fines SET status=?, note=?, resolved_at=CASE WHEN ?='pendiente' THEN NULL ELSE datetime('now') END WHERE id=?").run(status, note, status, f.id);
+  audit('fine', f.id, 'status:' + status, f, { status, note }, req.user.id);
   res.json({ ok: true });
 }));
 

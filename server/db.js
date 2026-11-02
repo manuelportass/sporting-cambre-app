@@ -190,6 +190,29 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   last_ok TEXT,
   failures INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS injury_tests (     -- tests de evolución de lesionados (lado lesionado vs sano)
+  id INTEGER PRIMARY KEY,
+  injury_id INTEGER NOT NULL REFERENCES injuries(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  kind TEXT NOT NULL,                 -- movilidad | ybt | fuerza | salto
+  data TEXT NOT NULL,                 -- valores y resultados calculados (JSON)
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS fines (            -- multas del primer equipo
+  id INTEGER PRIMARY KEY,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,                 -- día del entrenamiento
+  kind TEXT NOT NULL DEFAULT 'rpe',
+  reason TEXT,
+  amount REAL NOT NULL,
+  deadline TEXT,                      -- límite (UTC) para registrar el RPE
+  status TEXT NOT NULL DEFAULT 'pendiente', -- pendiente | pagada | anulada
+  note TEXT,
+  resolved_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (player_id, date, kind)
+);
 CREATE TABLE IF NOT EXISTS push_log (
   id INTEGER PRIMARY KEY,
   kind TEXT NOT NULL,                 -- wellness | rpe | eva | prueba | manual
@@ -350,6 +373,13 @@ const cols = t => db.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
 if (!cols('player_private').includes('age')) db.exec('ALTER TABLE player_private ADD COLUMN age INTEGER');
 // Disponibilidad: solo disponible / limitado / lesionado
 db.exec("UPDATE players SET availability='disponible' WHERE availability IS NULL OR availability='pendiente'; UPDATE players SET availability='lesionado' WHERE availability='no_disponible'");
+// Sexo (necesario para el VO₂máx estimado del 30-15 IFT). El primer equipo es masculino: se rellena una sola vez y se puede corregir en la ficha.
+if (!cols('players').includes('sex')) {
+  db.exec('ALTER TABLE players ADD COLUMN sex TEXT');
+  db.exec("UPDATE players SET sex='M' WHERE category_id IN (SELECT id FROM categories WHERE code='senior')");
+}
+// Apodo del jugador (saludo en su pantalla de inicio)
+if (!cols('players').includes('nickname')) db.exec('ALTER TABLE players ADD COLUMN nickname TEXT');
 if (!cols('team_sessions').includes('track_missing')) db.exec('ALTER TABLE team_sessions ADD COLUMN track_missing INTEGER DEFAULT 1');
 
 // ---------- Configuración por defecto ----------
@@ -401,9 +431,11 @@ const DEFAULT_SETTINGS = {
   painScale: { min: 0, max: 10, label: 'EVA 0–10 (0 = sin dolor, 10 = máximo dolor imaginable)' },
   playerCustomFields: [],   // [{key,label,type}]
   // Qué puede ver cada jugador de sus propios datos
-  playerView: { showLoad: true, showAcwr: false, showTests: true, showStats: true },
+  playerView: { showLoad: true, showAcwr: true, showTests: true, showStats: true },
   // Recordatorios al móvil (notificaciones push). Hora de Madrid; solo a quien no lo ha registrado.
   notifications: { enabled: true, wellness: { enabled: true, time: '17:00' }, rpe: { enabled: true, time: '22:00' }, eva: { enabled: true, time: '22:00' } },
+  // Multas por no registrar el RPE en las 24 h siguientes al aviso (desde la fecha de inicio)
+  fines: { enabled: true, startDate: '2026-11-02', amount: 2, reminder: true },
   sessionTypes: ['Entrenamiento', 'Recuperación', 'Activación'],
   extraTypes: ['Fuerza / gimnasio', 'Carrera continua', 'Intervalos', 'Fisioterapia / readaptación', 'Movilidad', 'Otro deporte', 'Otro'],
 };
@@ -458,6 +490,40 @@ function seed() {
   }
 }
 seed();
+// Sentadilla: 1RM estimado (Brzycki, 1993) y perfil carga–velocidad por vídeo (20-40-60-80 % del 1RM)
+{
+  const ins = db.prepare('INSERT OR IGNORE INTO test_types(name,family,fields,protocol) VALUES (?,?,?,?)');
+  ins.run('Sentadilla · 1RM estimado', 'fuerza', JSON.stringify([
+    { key: 'peso', label: 'Peso levantado', unit: 'kg', decimals: 1, better: null },
+    { key: 'reps', label: 'Repeticiones', unit: '', decimals: 0, better: null },
+    { key: 'rm', label: '1RM estimado', unit: 'kg', decimals: 1, better: 'higher' },
+  ]), 'Sentadilla trasera. 1RM estimado con la fórmula de Brzycki (1993): 1RM = peso / (1,0278 − 0,0278 × repeticiones). Fiable hasta 10 repeticiones.');
+  db.prepare("UPDATE test_types SET protocol=REPLACE(protocol, 'Velocidad media concéntrica medida por vídeo (seguimiento del extremo de la barra).', '5 repeticiones por carga en el mismo vídeo; se registra la media de la velocidad media concéntrica (seguimiento del extremo de la barra).') WHERE name='Sentadilla · perfil carga–velocidad'").run();
+  ins.run('Sentadilla · perfil carga–velocidad', 'fuerza', JSON.stringify([
+    { key: 'v20', label: 'VMC media 20 % 1RM', unit: 'm/s', decimals: 2, better: 'higher' },
+    { key: 'v40', label: 'VMC media 40 % 1RM', unit: 'm/s', decimals: 2, better: 'higher' },
+    { key: 'v60', label: 'VMC media 60 % 1RM', unit: 'm/s', decimals: 2, better: 'higher' },
+    { key: 'v80', label: 'VMC media 80 % 1RM', unit: 'm/s', decimals: 2, better: 'higher' },
+    { key: 'rm', label: '1RM de referencia', unit: 'kg', decimals: 1, better: null },
+  ]), 'Sentadilla trasera a máxima velocidad intencional en la fase concéntrica. 5 repeticiones por carga en el mismo vídeo; se registra la media de la velocidad media concéntrica (seguimiento del extremo de la barra).');
+}
+// Perímetros (cm) con índice cintura-cadera calculado
+db.prepare('INSERT OR IGNORE INTO test_types(name,family,fields,protocol) VALUES (?,?,?,?)').run('Perímetros', 'antropometria', JSON.stringify([
+  { key: 'cintura', label: 'Cintura', unit: 'cm', decimals: 1, better: null },
+  { key: 'cadera', label: 'Cadera', unit: 'cm', decimals: 1, better: null },
+  { key: 'icc', label: 'Índice cintura-cadera', unit: '', decimals: 2, better: null },
+  { key: 'muslo_d', label: 'Muslo derecho', unit: 'cm', decimals: 1, better: null },
+  { key: 'muslo_i', label: 'Muslo izquierdo', unit: 'cm', decimals: 1, better: null },
+  { key: 'gluteo', label: 'Glúteo', unit: 'cm', decimals: 1, better: null },
+]), 'Cinta métrica inextensible, jugador de pie y relajado, sin comprimir la piel. Mismo evaluador y mismos puntos de referencia en cada medición. El índice cintura-cadera se calcula solo (cintura / cadera).');
+// Tests de salto: mejor salto + media de 3 saltos (análisis por vídeo o registro manual)
+for (const t of db.prepare("SELECT id, fields FROM test_types WHERE family='salto'").all()) {
+  const f = JSON.parse(t.fields);
+  if (f.some(x => x.key === 'altura') && !f.some(x => x.key === 'media')) {
+    const nf = f.map(x => (x.key === 'altura' ? { ...x, label: 'Mejor salto' } : x)).concat([{ key: 'media', label: 'Media de 3 saltos', unit: 'cm', decimals: 1, better: 'higher' }]);
+    db.prepare('UPDATE test_types SET fields=? WHERE id=?').run(JSON.stringify(nf), t.id);
+  }
+}
 // Nombre del preparador con tilde (versiones anteriores lo guardaban sin ella)
 { const c = getSetting.get('club'); if (c && c.value.includes('"Jose Manuel Portas')) putSetting.run('club', c.value.replace('"Jose Manuel Portas', '"José Manuel Portas')); }
 // El peso corporal se registra como un test (evolución a lo largo de la temporada)
@@ -470,6 +536,13 @@ seed();
     db.prepare("INSERT INTO test_results(test_type_id,player_id,date,values_json,notes) VALUES (?,?,date('now'),?,'Peso de la ficha')").run(tp.id, o.player_id, JSON.stringify({ peso: o.weight_kg }));
     db.prepare('UPDATE player_private SET weight_kg=NULL WHERE player_id=?').run(o.player_id);
   }
+}
+
+// Una sola vez: el ACWR pasa a mostrarse a los jugadores en «Mi progreso» (se puede volver a ocultar en Cuentas)
+if (!getSetting.get('_m_showacwr')) {
+  const pv = getSetting.get('playerView');
+  if (pv) { const v = JSON.parse(pv.value); v.showAcwr = true; putSetting.run('playerView', JSON.stringify(v)); }
+  putSetting.run('_m_showacwr', '1');
 }
 
 function audit(entity, entityId, action, before, after, userId) {

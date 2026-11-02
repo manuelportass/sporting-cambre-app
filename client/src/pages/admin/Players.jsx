@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DEMO, api } from '../../api';
 import { Avatar, Empty, ErrorBox, Field, FileButton, ListRow, Loading, Modal, MoreMenu, PageHead, Seg, useApi, useToast } from '../../components/ui';
 import PlayerForm from '../../components/PlayerForm';
+import PhotoCapture, { AvatarCam } from '../../components/PhotoCapture';
 import { readTable, downloadTemplate, exportCSV } from '../../lib/files';
 import { WEEKDAYS } from '../../lib/format';
 
@@ -14,19 +15,25 @@ export default function Players() {
   const [cat, setCat] = useState('');
   const [q, setQ] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  const [noPhoto, setNoPhoto] = useState(false);
+  const [cam, setCam] = useState(null); // { ids, i }
   const list = useApi('/players' + (showInactive ? '?active=all' : ''));
   const slots = useApi('/gym/slots');
   const [form, setForm] = useState(false);
   const [imp, setImp] = useState(sp.get('cargar') ? 'season' : false);
   const slotName = id => { const s = slots.data?.find(x => x.id === id); return s ? `${WEEKDAYS[s.weekday].toLowerCase()} ${s.start_time}` : ''; };
   const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const rows = useMemo(() => (list.data || []).filter(p => (!cat || (cat === 'none' ? !p.category_code : p.category_code === cat)) && norm(p.full_name).includes(norm(q))), [list.data, cat, q]);
+  const rows = useMemo(() => (list.data || []).filter(p => (!cat || (cat === 'none' ? !p.category_code : p.category_code === cat)) && (!noPhoto || !p.photo_file_id) && norm(p.full_name).includes(norm(q))), [list.data, cat, q, noPhoto]);
+  const missing = (list.data || []).filter(p => p.active !== false && !p.photo_file_id && (!cat || (cat === 'none' ? !p.category_code : p.category_code === cat))).length;
+  const camPlayer = cam && (list.data || []).find(p => p.id === cam.ids[cam.i]);
+  const startSeries = () => { const ids = rows.filter(p => !p.photo_file_id).map(p => p.id); if (!ids.length) return toast('Todos los jugadores de esta lista ya tienen foto'); setCam({ ids, i: 0 }); };
   return <div>
     <PageHead title="Jugadores" sub={list.data ? `${rows.length} de ${list.data.length}` : null} actions={<>
       <MoreMenu items={[
         { label: 'Cargar listado 2026/27', onClick: () => setImp('season') },
         { label: 'Importar CSV / Excel', onClick: () => setImp('file') },
         ...(DEMO ? [] : [{ label: 'Cargar fotos del primer equipo', onClick: async () => { try { const r = await api.post('/seed/photos', {}); toast(`${r.done} fotos asignadas${r.unmatched.length ? ` · sin jugador: ${r.unmatched.join(', ')}` : ''}`); list.reload(); } catch (e) { toast(e.message, 'err'); } } }]),
+        { label: '📷 Hacer fotos en serie (sin foto)', onClick: startSeries },
         { label: 'Exportar listado (CSV)', onClick: () => exportCSV(rows, [{ key: 'first_name', label: 'Nombre' }, { key: 'last_name', label: 'Apellidos' }, { key: 'category_name', label: 'Categoría' }, { key: 'position', label: 'Posición' }], 'jugadores.csv') },
         { label: showInactive ? 'Ocultar desactivados' : 'Mostrar desactivados', onClick: () => setShowInactive(v => !v) },
       ]} />
@@ -34,13 +41,17 @@ export default function Players() {
     <div className="row" style={{ marginBottom: 12 }}>
       <Seg value={cat} onChange={setCat} options={[{ value: '', label: 'Todos' }, { value: 'infantil', label: 'Infantil' }, { value: 'cadete', label: 'Cadete' }, { value: 'juvenil', label: 'Juvenil' }, { value: 'senior', label: 'Primer equipo' }]} />
       <input type="search" placeholder="Buscar…" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 220 }} />
+      {list.data && <button className={'chip-f' + (noPhoto ? ' on' : '')} onClick={() => setNoPhoto(v => !v)}>Sin foto · {missing}</button>}
     </div>
+    {list.data && !list.loading && rows.length > 0 && <p className="small muted" style={{ margin: '-4px 0 10px' }}>Toca la foto de un jugador para hacerle una con la cámara o elegirla de la galería.</p>}
     <ErrorBox error={list.error} retry={list.reload} />
     {list.loading ? <Loading /> : !rows.length ? <Empty title="No hay jugadores que mostrar">Usa «⋯ → Cargar listado 2026/27» o «+ Nuevo».</Empty> :
       <div className="list">{rows.map(p => <ListRow key={p.id} onClick={() => nav('/jugadores/' + p.id)}
-        left={<Avatar name={p.full_name} fileId={p.photo_file_id} />} title={p.full_name}
+        left={<AvatarCam player={p} onClick={() => setCam({ ids: [p.id], i: 0 })} />} title={p.full_name}
         sub={[p.category_name || 'Sin categoría', p.category_code !== 'senior' && p.slot_ids.length ? p.slot_ids.map(slotName).join(', ') : null].filter(Boolean).join(' · ')}
         right={<>{!p.active && <span className="tag">Desactivado</span>}{p.open_injuries > 0 && <span className="tag warn">Lesión</span>}</>} />)}</div>}
+    {camPlayer && <PhotoCapture player={camPlayer} onSaved={() => list.reload()} onClose={() => setCam(null)}
+      queue={cam.ids.length > 1 ? { index: cam.i, total: cam.ids.length, next: () => setCam(c => (c.i + 1 < c.ids.length ? { ...c, i: c.i + 1 } : null)) } : null} />}
     {form && <PlayerForm onClose={() => setForm(false)} onSaved={() => list.reload()} />}
     {imp && <ImportPlayers season={imp === 'season'} onClose={() => { setImp(false); if (sp.get('cargar')) setSp({}); }} onDone={() => { list.reload(); slots.reload(); }} />}
   </div>;

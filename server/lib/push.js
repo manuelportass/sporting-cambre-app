@@ -6,6 +6,7 @@ const path = require('path');
 const webpush = require('web-push');
 const { db, settings, DATA_DIR } = require('../db');
 const { isoWeekday } = require('./util');
+const F = require('./fines');
 
 let keys = null;
 function vapid() {
@@ -50,6 +51,7 @@ async function sendToUser(userId, payload) {
 const MSG = {
   wellness: { title: 'Wellness de hoy', body: '¿Cómo te encuentras hoy? Rellena tu wellness (1 minuto).', url: '/?v=wellness' },
   rpe: { title: 'RPE de la sesión', body: '¿Qué tal el entrenamiento? Registra tu RPE de hoy.', url: '/?v=rpe' },
+  multa: { title: 'Te queda 1 hora para el RPE', body: 'Registra el RPE del entrenamiento de ayer en la próxima hora o tendrás una multa de 2 €.', url: '/?v=rpe' },
   eva: { title: 'EVA tras la sesión', body: 'Registra el dolor que has notado hoy (EVA 0–10).', url: '/?v=dolor' },
 };
 // Jugadores con cuenta y avisos activos a los que les falta el registro de hoy
@@ -79,8 +81,20 @@ async function sendReminder(kind, date, { force = false } = {}) {
 async function tick(now = madridNow()) {
   const s = settings(); const n = s.notifications;
   if (!n?.enabled) return [];
-  const training = s.collectiveDays.includes(isoWeekday(now.date)) || !!db.prepare("SELECT 1 FROM team_sessions WHERE date=? AND session_type!='Partido'").get(now.date);
+  const training = F.isTrainingDay(now.date, s);
   const out = [];
+  // Último aviso antes de la multa: 23 h después del aviso de RPE del día de entrenamiento
+  try {
+    const fd = F.reminderDue();
+    if (fd && !db.prepare("SELECT 1 FROM push_log WHERE kind='multa' AND date=? AND user_id IS NULL").get(fd)) {
+      const amount = String(s.fines?.amount ?? 2).replace('.', ',');
+      let sent = 0, users = 0;
+      for (const u of F.reminderTargets(fd)) { users++; sent += await sendToUser(u.user_id, { ...MSG.multa, body: MSG.multa.body.replace('2 €', amount + ' €'), tag: `multa-${fd}` }); }
+      db.prepare("INSERT INTO push_log(kind,date,user_id,sent) VALUES ('multa',?,NULL,?)").run(fd, sent);
+      out.push({ kind: 'multa', users, sent });
+    }
+    F.settle();
+  } catch (e) { console.error('Multas', e); }
   for (const kind of ['wellness', 'rpe', 'eva']) {
     if (kind !== 'wellness' && !training) continue;
     if (n[kind]?.enabled && n[kind].time === now.time) out.push({ kind, ...(await sendReminder(kind, now.date)) });

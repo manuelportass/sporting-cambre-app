@@ -5,6 +5,7 @@ import App from './App';
 import { ToastProvider } from './components/ui';
 import './styles.css';
 import DemoBar from './demo/DemoBar';
+import Intro from './components/Intro';
 import { registerSW } from './lib/push';
 
 registerSW();
@@ -15,7 +16,7 @@ const Router = window.__scpfDemo ? MemoryRouter : BrowserRouter;
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <Router>
-      <ToastProvider>{window.__scpfDemo && <DemoBar />}<App /></ToastProvider>
+      <ToastProvider>{window.__scpfDemo && <DemoBar />}<App /><Intro /></ToastProvider>
     </Router>
   </React.StrictMode>,
 );

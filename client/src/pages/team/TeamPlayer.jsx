@@ -1,3 +1,7 @@
+import PhotoCapture from '../../components/PhotoCapture';
+import { LVChart, LV_TEST } from '../../components/SquatLab';
+import { linfit, loadFor, PCTS } from '../../lib/bar';
+import { IFT, VO2_FIELD, VO2_NOTE, mergeVO2, vo2Detail } from '../../lib/vo2';
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../api';
@@ -240,15 +244,56 @@ function InjuriesTab({ data }) {
 function TestsTab({ tests }) {
   const byType = useMemo(() => { const m = new Map(); for (const t of tests) { if (!m.has(t.name)) m.set(t.name, []); m.get(t.name).push(t); } return [...m.entries()]; }, [tests]);
   if (!tests.length) return <Empty title="Sin tests registrados">Regístralos en <Link to="/primer-equipo/tests">Tests físicos</Link>.</Empty>;
-  return <div className="grid g2">{byType.map(([name, list]) => {
-    const fields = list[0].fields;
+  const ift = tests.filter(t => t.name === IFT);
+  return <div className="stack">
+    {ift.length > 0 && <VO2Card list={ift} />}
+    {tests.some(t => t.name === LV_TEST) && <LVCard list={tests.filter(t => t.name === LV_TEST)} />}
+    <div className="grid g2">{byType.map(([name, list0]) => {
+    const list = list0.map(mergeVO2);
+    const fields = name === IFT ? [...list[0].fields, VO2_FIELD] : list[0].fields;
+    const chartFields = list[0].fields.filter(f => f.key !== 'etapa' || name !== IFT);
     const data = [...list].reverse().map(r => ({ date: r.date, ...r.values }));
     return <div key={name} className="card"><h3>{name}</h3>
-      {list.length >= 2 ? <MultiLine data={data} lines={fields.map(f => ({ key: f.key, label: `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}` }))} decimals={fields[0].decimals} height={180} /> : <p className="muted small">Se mostrará la evolución con al menos dos mediciones.</p>}
-      <table className="t small"><thead><tr><th>Fecha</th>{fields.map(f => <th key={f.key} className="n">{f.label} {f.unit && `(${f.unit})`}</th>)}<th>Dispositivo</th></tr></thead>
-        <tbody>{list.map((r, k) => { const prev = list[k + 1]; return <tr key={r.id}><td>{fmtDate(r.date)}</td>{fields.map(f => { const v = r.values[f.key], pv = prev?.values[f.key]; const diff = v !== null && pv !== null && pv !== undefined ? v - pv : null; return <td key={f.key} className="n">{fmtNum(v, f.decimals)}{diff !== null && <span className="muted"> ({diff > 0 ? '+' : ''}{fmtNum(diff, f.decimals)})</span>}</td>; })}<td>{r.device || '—'}</td></tr>; })}</tbody></table>
+      {list.length >= 2 ? <MultiLine data={data} lines={chartFields.map(f => ({ key: f.key, label: `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}` }))} decimals={chartFields[0].decimals} height={180} /> : <p className="muted small">Se mostrará la evolución con al menos dos mediciones.</p>}
+      <div className="table-wrap"><table className="t small"><thead><tr><th>Fecha</th>{fields.map(f => <th key={f.key} className="n">{f.virtual ? <>VO₂máx <i>estimado</i></> : f.label} {f.unit && `(${f.unit})`}</th>)}<th>Dispositivo</th></tr></thead>
+        <tbody>{list.map((r, k) => { const prev = list[k + 1]; return <tr key={r.id}><td>{fmtDate(r.date)}</td>{fields.map(f => { const v = r.values[f.key], pv = prev?.values[f.key]; const diff = v != null && pv != null ? v - pv : null; return <td key={f.key} className="n" title={f.virtual ? vo2Detail(r.vo2) : undefined}>{f.virtual && v == null ? <span className="muted">falta dato</span> : fmtNum(v, f.decimals)}{diff !== null && <span className="muted"> ({diff > 0 ? '+' : ''}{fmtNum(diff, f.decimals)})</span>}</td>; })}<td>{r.device || '—'}</td></tr>; })}</tbody></table></div>
     </div>;
-  })}</div>;
+  })}</div></div>;
+}
+
+// Curva carga–velocidad en sentadilla (última evaluación y, en gris, la anterior)
+function LVCard({ list }) {
+  const pts = r => PCTS.filter(p => r.values['v' + p] != null && r.values.rm).map(p => ({ load: loadFor(r.values.rm, p), v: r.values['v' + p] }));
+  const last = list[0], prev = list[1];
+  const P = pts(last), fit = linfit(P.map(x => x.load), P.map(x => x.v));
+  return <div className="card"><div className="row between"><h3 style={{ margin: 0 }}>Sentadilla · curva carga–velocidad</h3><span className="small muted">{fmtDate(last.date)} · 1RM {fmtNum(last.values.rm, 1)} kg</span></div>
+    <LVChart pts={P} fit={fit} rm={last.values.rm} prev={prev ? pts(prev).map(x => ({ load: x.load, prev: x.v })) : null} />
+    <div className="sq-fit small">{PCTS.map(p => <span key={p}>{p} %: <b>{fmtNum(last.values['v' + p], 2)}</b> m/s{prev?.values['v' + p] != null ? <span className="muted"> ({last.values['v' + p] - prev.values['v' + p] >= 0 ? '+' : ''}{fmtNum(last.values['v' + p] - prev.values['v' + p], 2)})</span> : null}</span>)}
+      {fit && <span>R² <b>{fmtNum(fit.r2, 2)}</b></span>}</div>
+    {prev && <p className="small muted" style={{ margin: '4px 0 0' }}>En gris, la evaluación anterior ({fmtDate(prev.date)}).</p>}
+  </div>;
+}
+
+// VO₂máx estimado (Buchheit, 2008) a partir de cada 30-15 IFT del jugador
+function VO2Card({ list }) {
+  const ok = list.filter(r => r.vo2?.value != null);
+  const last = ok[0], prev = ok[1], first = ok[ok.length - 1];
+  const pending = list.filter(r => r.vo2?.value == null);
+  const evo = [...ok].reverse().map(r => ({ date: r.date, vo2: r.vo2.value }));
+  const sign = x => (x > 0 ? '+' : x < 0 ? '−' : '±') + fmtNum(Math.abs(x), 1);
+  return <div className="card vo2-card">
+    <div className="row between"><h3 style={{ margin: 0 }}>VO₂máx estimado <span className="tag">30-15 IFT · Buchheit (2008)</span></h3>{ok.length > 0 && <span className="small muted">{ok.length} evaluación{ok.length > 1 ? 'es' : ''}</span>}</div>
+    <div className="vo2-body">
+      <div className="vo2-now">{last ? <><b>{fmtNum(last.vo2.value, 1)}</b><small>ml/kg/min · estimado</small>
+        <div className="small muted">{fmtDate(last.date)}</div>
+        {prev && <div className="small">Desde la anterior: <b>{sign(last.vo2.value - prev.vo2.value)}</b></div>}
+        {ok.length > 2 && <div className="small">Desde la primera: <b>{sign(last.vo2.value - first.vo2.value)}</b></div>}</> : <span className="muted small">Aún no se puede estimar.</span>}</div>
+      <div style={{ flex: 1, minWidth: 220 }}>{evo.length >= 2 ? <MultiLine data={evo} lines={[{ key: 'vo2', label: 'VO₂máx estimado (ml/kg/min)' }]} decimals={1} height={150} /> : <p className="small muted">La evolución aparecerá a partir de la segunda evaluación.</p>}</div>
+    </div>
+    {last && <p className="small muted" style={{ margin: 0 }}>Última estimación con: {vo2Detail(last.vo2)}.</p>}
+    {pending.map(r => <div key={r.id} className="alert warn small"><span>⚠</span><div>Test del {fmtDate(r.date)} sin estimación. {vo2Detail(r.vo2)}. Complétalo (Ficha → edad y sexo; peso en «Peso corporal») y se calculará solo.</div></div>)}
+    <p className="small muted" style={{ margin: 0 }}>{VO2_NOTE}</p>
+  </div>;
 }
 
 // Foto del jugador (solo el preparador puede cambiarla). Se ajusta sola al formato de las demás (3:4).
@@ -256,6 +301,7 @@ function PhotoBox({ p, reload }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState(false);
+  const [cam, setCam] = useState(false);
   const up = async f => {
     setBusy(true);
     try { await api.upload(`/players/${p.id}/photo`, await normalizePlayerPhoto(f)); toast('Foto actualizada'); reload(); }
@@ -267,9 +313,11 @@ function PhotoBox({ p, reload }) {
       <div className="stack" style={{ gap: 8 }}>
         <span className="small muted">Se ajusta sola al formato de las demás fotos (vertical 3:4). Es la que el jugador ve en su pantalla de inicio.</span>
         <div className="row" style={{ gap: 8 }}>
-          <FileButton className="btn primary sm" accept="image/*" onFile={up}>{busy ? 'Subiendo…' : p.photo_file_id ? 'Cambiar foto' : 'Subir foto'}</FileButton>
+          <button className="btn primary sm" onClick={() => setCam(true)}>📷 Hacer foto</button>
+          <FileButton className="btn sm" accept="image/*" onFile={up}>{busy ? 'Subiendo…' : p.photo_file_id ? 'Cambiar desde archivo' : 'Subir archivo'}</FileButton>
           {p.photo_file_id && <button className="btn sm ghost" disabled={busy} onClick={() => setDel(true)}>Quitar</button>}</div>
       </div></div>
+    {cam && <PhotoCapture player={{ ...p, full_name: p.full_name || p.name || `${p.first_name || ''} ${p.last_name || ''}`.trim() }} onSaved={reload} onClose={() => setCam(false)} />}
     {del && <Confirm title="Quitar foto" danger confirmText="Quitar" message="El jugador verá el escudo en lugar de su foto." onConfirm={async () => { await api.del(`/players/${p.id}/photo`); toast('Foto eliminada'); reload(); }} onClose={() => setDel(false)} />}
   </div>;
 }
@@ -306,19 +354,22 @@ function GeneralTab({ data, reload }) {
   const toast = useToast();
   const p = data.player;
   const cur = p.availability === 'no_disponible' || p.availability === 'lesionado' ? 'lesionado' : p.availability === 'limitado' ? 'limitado' : 'disponible';
-  const [v, setV] = useState({ position: p.position || '', age: p.age_input ?? (p.birth_date ? '' : p.age ?? ''), dominant_leg: p.dominant_leg || '', availability: cur, notes: p.notes || '' });
+  const [v, setV] = useState({ nickname: p.nickname || '', position: p.position || '', age: p.age_input ?? (p.birth_date ? '' : p.age ?? ''), dominant_leg: p.dominant_leg || '', sex: p.sex || '', availability: cur, notes: p.notes || '' });
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
-    try { await api.put('/players/' + p.id, { position: v.position || null, dominant_leg: v.dominant_leg || null, availability: v.availability, notes: v.notes, private: { age: v.age === '' ? null : v.age } }); toast('Ficha guardada'); reload(); }
+    try { await api.put('/players/' + p.id, { nickname: v.nickname.trim() || null, position: v.position || null, dominant_leg: v.dominant_leg || null, sex: v.sex || null, availability: v.availability, notes: v.notes, private: { age: v.age === '' ? null : v.age } }); toast('Ficha guardada'); reload(); }
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   return <div className="grid g2" style={{ alignItems: 'start' }}>
     <div className="card stack"><h3>Ficha del jugador</h3>
       <div className="inline-fields">
+        <Field label="Apodo" hint="saludo de su app"><input type="text" maxLength={40} value={v.nickname} placeholder={(p.first_name || '').split(' ')[0]} onChange={e => setV({ ...v, nickname: e.target.value })} /></Field>
         <Field label="Posición"><select value={posGroup(v.position) || ''} onChange={e => setV({ ...v, position: e.target.value })}><option value="">—</option>{POSITIONS.map(x => <option key={x}>{x}</option>)}</select></Field>
         <Field label="Edad" hint={p.birth_date ? `por fecha de nacimiento: ${p.age} años` : 'años'}><input type="number" min="8" max="60" value={v.age} disabled={!!p.birth_date} placeholder={p.birth_date ? String(p.age) : ''} onChange={e => setV({ ...v, age: e.target.value })} /></Field>
       </div>
+      <div><span className="small" style={{ fontWeight: 600, color: 'var(--ink-2)' }}>Sexo <span className="muted" style={{ fontWeight: 400 }}>· para el VO₂máx estimado</span></span>
+        <div className="segpick">{[['M', 'Masculino'], ['F', 'Femenino']].map(([k, l]) => <button key={k} type="button" className={v.sex === k ? 'on' : ''} onClick={() => setV({ ...v, sex: v.sex === k ? '' : k })}>{l}</button>)}</div></div>
       <div><span className="small" style={{ fontWeight: 600, color: 'var(--ink-2)' }}>Pierna dominante</span>
         <div className="segpick">{[['derecha', 'Derecha'], ['izquierda', 'Izquierda'], ['ambas', 'Ambas']].map(([k, l]) => <button key={k} type="button" className={v.dominant_leg === k ? 'on' : ''} onClick={() => setV({ ...v, dominant_leg: v.dominant_leg === k ? '' : k })}>{l}</button>)}</div></div>
       <div><span className="small" style={{ fontWeight: 600, color: 'var(--ink-2)' }}>Disponibilidad</span>

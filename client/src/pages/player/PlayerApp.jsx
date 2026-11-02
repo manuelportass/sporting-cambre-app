@@ -8,6 +8,7 @@ import { crestOf, teamName } from '../../lib/crests';
 import { canPromptInstall, disablePush, enablePush, isDemo, isIOS, isStandalone, onInstallable, promptInstall, pushState, pushSupported } from '../../lib/push';
 import ChangePin from '../ChangePin';
 import { Crest } from '../Login';
+import { AcwrChart } from '../../components/charts';
 import { addDays, fmtDate, fmtDateLong, fmtDateTime, fmtNum, todayISO } from '../../lib/format';
 
 const Icon = ({ d }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
@@ -50,7 +51,7 @@ export default function PlayerApp() {
 function HomeScreen({ p, club, go }) {
   const [broken, setBroken] = useState(false);
   const src = p?.photo_file_id && !broken ? fileUrl(p.photo_file_id) : null;
-  const first = (p?.first_name || '').split(' ')[0];
+  const first = p?.nickname?.trim() || (p?.first_name || '').split(' ')[0];
   return <div className="pl-home">
     <div className="pl-home-head">
       <div className="pl-hero-top"><Crest size={34} /><span>{club.name}</span></div>
@@ -340,6 +341,26 @@ function NextMatch({ m }) {
 }
 
 const MSG = { ok: ['var(--verde)', '👍'], baja: ['var(--amarillo)', '↓'], alta: ['var(--naranja)', '↑'], sin_datos: ['#9a9b95', '…'] };
+// Mi carga (ACWR): relación entre la carga de la última semana (aguda) y la media móvil de las últimas semanas (crónica)
+const ZONE = { verde: 'Zona óptima', amarillo: 'Zona de precaución', naranja: 'Zona de riesgo', rojo: 'Fuera de rango', gris: 'Sin datos' };
+const ZC = { verde: 'var(--verde)', amarillo: 'var(--amarillo)', naranja: 'var(--naranja)', rojo: 'var(--rojo)', gris: '#9a9b95' };
+function AcwrCard({ a }) {
+  const c = a.current, b = a.bands;
+  const side = c && c.value < b.green[0] ? 'por debajo de' : c && c.value > b.green[1] ? 'por encima de' : 'dentro de';
+  const zone = c?.color === 'rojo' ? (c.value < b.green[0] ? 'Carga muy baja' : 'Carga muy alta') : ZONE[c?.color];
+  return <div className="card acwr-pl"><h3>Mi carga</h3>
+    {!c ? <p className="small muted" style={{ margin: 0 }}>Aún no hay datos suficientes: se calcula cuando tienes varias semanas de RPE registrado.</p> : <>
+      <div className="ap-now"><span className="ap-v" style={{ color: ZC[c.color] }}>{fmtNum(c.value, 2)}</span>
+        <div><span className="ap-z" style={{ '--c': ZC[c.color] }}>{zone}</span>
+          <small>Hoy estás {side} la zona óptima ({fmtNum(b.green[0], 1)}–{fmtNum(b.green[1], 1)})</small></div></div>
+      <AcwrChart series={a.series} bands={b} height={190} />
+      <div className="ap-leg small"><span><i style={{ background: 'var(--verde)' }} />Óptima</span><span><i style={{ background: 'var(--amarillo)' }} />Precaución</span><span><i style={{ background: 'var(--naranja)' }} />Riesgo</span><span className="muted">● tu punto de cada día</span></div>
+      {c.acute != null && c.chronic != null && <div className="ap-nums"><div><b>{fmtNum(c.acute)}</b><small>Carga de la última semana (aguda)</small></div><span>÷</span><div><b>{fmtNum(c.chronic)}</b><small>Tu media móvil (crónica)</small></div><span>=</span><div><b style={{ color: ZC[c.color] }}>{fmtNum(c.value, 2)}</b><small>ACWR</small></div></div>}
+      <p className="small muted" style={{ margin: 0 }}>Compara lo que has entrenado esta última semana con tu media de las semanas anteriores. Cerca de 1 = estás en tu nivel habitual. Es orientativo: no predice lesiones.</p>
+    </>}
+  </div>;
+}
+
 function Progress() {
   const r = useApi('/me/progress');
   if (r.loading) return <Loading />;
@@ -352,17 +373,8 @@ function Progress() {
     {load && <>
       <div className="card status" style={{ borderColor: MSG[load.message.code][0] }}><span className="si" style={{ background: MSG[load.message.code][0] }}>{MSG[load.message.code][1]}</span>
         <div><b>{load.message.title}</b><p>{load.message.text}</p></div></div>
-      <div className="card"><h3>Mi carga por semanas</h3>
-        <ResponsiveContainer width="100%" height={170}><BarChart data={load.weeks} margin={{ top: 6, right: 4, left: 4, bottom: 0 }}>
-          <XAxis dataKey="week" tickFormatter={(w, i) => i === load.weeks.length - 1 ? 'Últ. 7 d' : fmtDate(w, { day: 'numeric', month: 'short' })} stroke="#9a9b95" fontSize={10} tickLine={false} axisLine={false} interval={0} />
-          <YAxis hide />
-          {load.average ? <ReferenceLine y={load.average} stroke="#111511" strokeDasharray="4 4" /> : null}
-          <Bar dataKey="load" radius={[5, 5, 0, 0]} isAnimationActive={false}>{load.weeks.map((w, i) => <Cell key={i} fill={i === load.weeks.length - 1 ? 'var(--accent)' : '#d9d9d4'} />)}</Bar>
-        </BarChart></ResponsiveContainer>
-        <div className="row between small"><span><i className="sq" style={{ background: 'var(--accent)' }} /> Últimos 7 días <b>{fmtNum(load.current)}</b></span>{load.average ? <span><i className="dash" /> Tu media semanal <b>{fmtNum(load.average)}</b></span> : null}</div>
-        <p className="small muted" style={{ margin: '6px 0 0' }}>La carga es minutos × lo dura que fue la sesión (RPE). Los partidos cuentan con RPE 10.</p>
-        {view.showAcwr && load.acwr != null && <p className="small" style={{ margin: '4px 0 0' }}>Índice agudo:crónico <b>{fmtNum(load.acwr, 2)}</b></p>}
-      </div></>}
+      {load.acwr && <AcwrCard a={load.acwr} />}
+</>}
     <div className="card"><h3>Cómo me encuentro</h3>{!wellness.length ? <p className="small muted" style={{ margin: 0 }}>Rellena el wellness antes de entrenar para ver tu evolución.</p> : <>
       <div className="row" style={{ gap: 14, alignItems: 'center' }}><span className="big-pct" style={{ color: wNow === null ? '#9a9b95' : wNow >= 70 ? 'var(--verde)' : wNow >= 50 ? 'var(--amarillo)' : 'var(--rojo)' }}>{wNow ?? '—'}<small>%</small></span>
         <span className="small">{wNow === null ? 'Sin registros esta semana' : wPrev === null ? 'Media de esta semana' : wNow > wPrev + 3 ? <>Mejor que la semana pasada <b>({wPrev} %)</b></> : wNow < wPrev - 3 ? <>Peor que la semana pasada <b>({wPrev} %)</b></> : <>Igual que la semana pasada</>}</span></div>

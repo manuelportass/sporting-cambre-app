@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../api';
 import { ColorBadge, Confirm, Empty, ErrorBox, Field, FileButton, ListRow, Loading, Modal, MoreMenu, PageHead, Pending, Tabs, show, useApi, useToast } from '../../components/ui';
 import { MultiLine } from '../../components/charts';
+import InjuryTestsTab from '../../components/InjuryTests';
 import { saveBlob } from '../../lib/files';
 import { INJ_COLOR, INJ_STATUS, fmtDate, fmtDateTime, todayISO } from '../../lib/format';
 
@@ -44,7 +45,7 @@ export default function InjuryDetail() {
       <div className="row between small" style={{ marginBottom: 6 }}><b>Fase {curIdx + 1} de {phases.data.length}: {i.phase_name || 'Sin fase'}</b><span className="muted">Cambiar ›</span></div>
       <div className="phasebar" aria-hidden="true">{phases.data.map((f, k) => <i key={f.id} title={f.name} className={k < curIdx ? 'done' : k === curIdx ? 'cur' : ''} />)}</div>
     </button>}
-    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resumen', label: 'Resumen' }, { key: 'dolor', label: `Dolor EVA (${i.pain.length})` }, { key: 'seguimiento', label: `Seguimiento (${i.entries.length})` }, { key: 'docs', label: `Documentos (${i.files.length})` }, { key: 'historial', label: 'Historial' }]} />
+    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resumen', label: 'Resumen' }, { key: 'dolor', label: `Dolor EVA (${i.pain.length})` }, { key: 'seguimiento', label: `Seguimiento (${i.entries.length})` }, { key: 'tests', label: `Tests (${i.tests.length})` }, { key: 'docs', label: `Documentos (${i.files.length})` }, { key: 'historial', label: 'Historial' }]} />
     {tab === 'resumen' && <div className="stack" style={{ gap: 14 }}>
       <div className="card"><dl className="grid g3" style={{ margin: 0, gap: 12 }}>{lesion.filter(([, v]) => v).map(([k, v]) => <div key={k}><dt className="small muted">{k}</dt><dd style={{ margin: 0, fontWeight: 500 }}>{v}</dd></div>)}</dl>
         {textos.filter(([, v]) => v).map(([k, v]) => <div key={k} style={{ marginTop: 12 }}><div className="small muted">{k}</div><div style={{ whiteSpace: 'pre-wrap' }}>{v}</div></div>)}
@@ -64,6 +65,7 @@ export default function InjuryDetail() {
       <div className="list">{i.entries.map(e => <ListRow key={e.id} onClick={() => setModal({ entry: e })} title={fmtDate(e.date, { weekday: 'short', day: 'numeric', month: 'short' })}
         sub={[e.exercises.map(x => x.name).join(', '), e.response].filter(Boolean).join(' · ') || 'Sin detalle'}
         right={<>{e.pain !== null ? <span className="tag warn">Dolor {e.pain}</span> : null}<button className="btn sm ghost del" aria-label="Eliminar seguimiento" title="Eliminar" onClick={ev => { ev.stopPropagation(); setModal({ delEntry: e }); }}>🗑</button></>} />)}</div>)}
+    {tab === 'tests' && <InjuryTestsTab injury={i} reload={r.reload} />}
     {tab === 'docs' && <div className="stack">
       <div className="row"><span className="small muted">Archivos privados, solo accesibles con tu sesión.</span><span className="spacer" /><FileButton className="btn" accept="image/*,.pdf,.doc,.docx,.txt" onFile={uploadDoc}>Adjuntar</FileButton></div>
       {!i.files.length ? <Empty title="Sin documentos" /> : <div className="list">{i.files.map(f => <div key={f.id} className="lrow" style={{ cursor: 'default' }}>

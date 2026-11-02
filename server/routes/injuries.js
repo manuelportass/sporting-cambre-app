@@ -149,9 +149,10 @@ r.get('/:id', h((req, res) => {
   const files = db.prepare("SELECT id, original_name, mime, size, uploaded_at FROM files WHERE owner_type='injury' AND owner_id=? ORDER BY id DESC").all(i.id);
   const others = db.prepare("SELECT id, injury_date, zone, diagnosis, status FROM injuries WHERE player_id=? AND id!=? ORDER BY injury_date DESC").all(i.player_id, i.id);
   const pain = db.prepare('SELECT id, date, eva, notes, created_at FROM injury_pain WHERE injury_id=? ORDER BY date DESC, id DESC').all(i.id);
+  const tests = db.prepare('SELECT * FROM injury_tests WHERE injury_id=? ORDER BY date DESC, id DESC').all(i.id).map(t => ({ ...t, data: JSON.parse(t.data) }));
   res.json({
     ...decorate(i), player: { ...core.playerRow(p), private: priv, age: age(priv.birth_date) },
-    entries, history, files, otherInjuries: others, pain,
+    entries, history, files, otherInjuries: others, pain, tests,
   });
 }));
 
@@ -215,6 +216,26 @@ r.delete('/:id', h((req, res) => {
   db.prepare("SELECT id FROM files WHERE owner_type='injury' AND owner_id=?").all(i.id).forEach(f => core.removeFile(f.id));
   db.prepare('DELETE FROM injuries WHERE id=?').run(i.id);
   audit('injury', i.id, 'delete', i, null, req.user.id);
+  res.json({ ok: true });
+}));
+
+// ----- Tests de evolución (movilidad, Y-Balance, fuerza, salto): lado lesionado vs sano -----
+const IT = require('../lib/injtests');
+r.post('/:id/tests', h((req, res) => {
+  const i = db.prepare('SELECT id FROM injuries WHERE id=?').get(req.params.id);
+  if (!i) throw notFound();
+  const kind = oneOf(req.body?.kind, ['movilidad', 'ybt', 'fuerza', 'salto'], 'Tipo de test');
+  const data = IT.clean(kind, req.body?.data || {});
+  const o = { injury_id: i.id, date: reqDate(req.body?.date), kind, data: JSON.stringify(data), notes: optText(req.body?.notes, 1000) };
+  const id = db.prepare('INSERT INTO injury_tests(injury_id,date,kind,data,notes) VALUES (@injury_id,@date,@kind,@data,@notes)').run(o).lastInsertRowid;
+  audit('injury_test', id, 'create', null, o, req.user.id);
+  res.json({ ok: true, id, data });
+}));
+r.delete('/tests/:tid', h((req, res) => {
+  const before = db.prepare('SELECT * FROM injury_tests WHERE id=?').get(req.params.tid);
+  if (!before) throw notFound();
+  db.prepare('DELETE FROM injury_tests WHERE id=?').run(before.id);
+  audit('injury_test', before.id, 'delete', before, null, req.user.id);
   res.json({ ok: true });
 }));
 

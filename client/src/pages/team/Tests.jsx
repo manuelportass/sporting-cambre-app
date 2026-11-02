@@ -5,18 +5,21 @@ import { Confirm, Empty, ErrorBox, Field, Loading, Modal, PageHead, Tabs, useApi
 import { MultiLine } from '../../components/charts';
 import { exportCSV, exportXLSX } from '../../lib/files';
 import { fmtDate, fmtNum, todayISO } from '../../lib/format';
+import JumpLab from '../../components/JumpLab';
+import SquatLab, { LV_TEST, RM_TEST } from '../../components/SquatLab';
+import { VO2_NOTE, isIFT, mergeVO2, vo2Detail, withVO2 } from '../../lib/vo2';
 
 export default function Tests() {
   const types = useApi('/team/test-types');
   const [typeId, setTypeId] = useState(null);
   const [tab, setTab] = useState('registrar');
-  useEffect(() => { if (types.data?.length && !types.data.find(t => t.id === typeId)) setTypeId(types.data[0].id); }, [types.data, typeId]);
+  useEffect(() => { if (types.data?.length && !types.data.find(t => t.id === typeId)) setTypeId((types.data.find(isIFT) || types.data[0]).id); }, [types.data, typeId]);
   const type = types.data?.find(t => t.id === typeId);
   return <div>
     <PageHead back="/primer-equipo" title="Tests físicos" actions={types.data && tab !== 'configurar' && <select value={typeId || ''} onChange={e => setTypeId(Number(e.target.value))} aria-label="Test" style={{ width: 'auto' }}>{types.data.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>} />
     <Tabs value={tab} onChange={setTab} tabs={[{ key: 'registrar', label: 'Registrar' }, { key: 'historial', label: 'Historial' }, { key: 'comparar', label: 'Evolución' }, { key: 'configurar', label: 'Configurar' }]} />
     {types.loading ? <Loading /> : <>
-      {tab === 'registrar' && type && <Register type={type} />}
+      {tab === 'registrar' && type && <Register type={type} types={types.data} />}
       {tab === 'historial' && type && <History type={type} />}
       {tab === 'comparar' && type && <Compare type={type} />}
       {tab === 'configurar' && <Configure types={types.data} reload={types.reload} />}
@@ -24,51 +27,80 @@ export default function Tests() {
   </div>;
 }
 
-function Register({ type }) {
+function Register({ type, types }) {
+  const [jl, setJl] = useState(false);
+  const [sq, setSq] = useState(false);
+  const isSquat = type.name === RM_TEST || type.name === LV_TEST;
+  const inFields = type.name === RM_TEST ? type.fields.filter(f => f.key !== 'rm') : type.name === 'Perímetros' ? type.fields.filter(f => f.key !== 'icc') : type.fields;
   const toast = useToast();
   const players = useApi('/players?category=senior');
   const [meta, setMeta] = useState({ date: todayISO(), device: '', protocol: type.protocol || '', conditions: '' });
   const [vals, setVals] = useState({});
   const [err, setErr] = useState(null);
-  useEffect(() => { setVals({}); setMeta(m => ({ ...m, protocol: type.protocol || '' })); }, [type.id, type.protocol]);
+  const [saved, setSaved] = useState(null); // VO₂máx estimado de lo recién guardado (30-15 IFT)
+  useEffect(() => { setVals({}); setSaved(null); setMeta(m => ({ ...m, protocol: type.protocol || '' })); }, [type.id, type.protocol]);
   const save = async () => {
     const items = Object.entries(vals).filter(([, v]) => type.fields.some(f => v[f.key] !== '' && v[f.key] !== undefined))
       .map(([pid, v]) => ({ test_type_id: type.id, player_id: Number(pid), ...meta, notes: v.__notes || null,
         values: Object.fromEntries(type.fields.map(f => [f.key, v[f.key] === '' || v[f.key] === undefined ? null : v[f.key]])) }));
     if (!items.length) return setErr('Introduce al menos un resultado.');
-    try { await api.post('/team/tests', { items }); toast(`${items.length} resultado(s) guardado(s)`); setVals({}); setErr(null); }
+    try {
+      const r = await api.post('/team/tests', { items }); toast(`${items.length} resultado(s) guardado(s)`); setVals({}); setErr(null);
+      if (isIFT(type)) { const all = await api.get(`/team/tests?type_id=${type.id}&from=${meta.date}&to=${meta.date}`); setSaved(all.filter(x => r.ids.includes(x.id))); }
+    }
     catch (e) { setErr(e.message); }
   };
   return <div className="stack">
+    {type.family === 'salto' && <div className="card jl-cta"><span className="jl-ico">🎥</span><div style={{ flex: 1 }}><b>Medir con vídeo</b><div className="small muted">Graba o adjunta 3 saltos por jugador: la altura se calcula sola por el tiempo de vuelo y se guardan el salto más alto y la media.</div></div>
+      <button className="btn primary" onClick={() => setJl(true)}>Test con vídeo</button></div>}
+    {jl && <JumpLab types={types} initialTypeId={type.id} onClose={() => setJl(false)} />}
+    {isSquat && <div className="card jl-cta"><span className="jl-ico">🏋️</span><div style={{ flex: 1 }}><b>Sentadilla: 1RM y velocidad con vídeo</b><div className="small muted">Registra el 1RM estimado (Brzycki) y graba la sentadilla al 20, 40, 60 y 80 % del 1RM: se mide la velocidad de la barra y se dibuja la curva carga–velocidad.</div></div>
+      <button className="btn primary" onClick={() => setSq(true)}>Abrir</button></div>}
+    {sq && <SquatLab types={types} onClose={() => setSq(false)} />}
+    {type.name === 'Perímetros' && <div className="alert info small"><span>ⓘ</span><div>El índice cintura-cadera se calcula solo al guardar (cintura / cadera). Puedes dejar en blanco los perímetros que no midas.</div></div>}
+    {type.name === RM_TEST && <div className="alert info small"><span>ⓘ</span><div>El 1RM estimado se calcula solo al guardar: 1RM = peso / (1,0278 − 0,0278 × repeticiones) (Brzycki, 1993). Entre 1 y 10 repeticiones.</div></div>}
     <div className="card"><div className="row"><Field label="Fecha" required><input type="date" value={meta.date} onChange={e => setMeta({ ...meta, date: e.target.value })} /></Field></div>
       <details style={{ marginTop: 10 }}><summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>Dispositivo, condiciones y protocolo</summary><div className="inline-fields" style={{ marginTop: 10 }}>
       <Field label="Dispositivo / método"><input type="text" value={meta.device} onChange={e => setMeta({ ...meta, device: e.target.value })} placeholder="p. ej. plataforma de contacto, fotocélulas" /></Field>
       <Field label="Condiciones de evaluación"><input type="text" value={meta.conditions} onChange={e => setMeta({ ...meta, conditions: e.target.value })} placeholder="superficie, hora, clima, calentamiento…" /></Field>
     </div><Field label="Protocolo" style={{ marginTop: 12 }}><textarea value={meta.protocol} onChange={e => setMeta({ ...meta, protocol: e.target.value })} /></Field></details></div>
     {players.loading ? <Loading /> : !players.data?.length ? <Empty title="No hay jugadores en el primer equipo" /> :
-      <div className="table-wrap"><table className="t"><thead><tr><th>Jugador</th>{type.fields.map(f => <th key={f.key}>{f.label}{f.unit ? ` (${f.unit})` : ''}</th>)}<th>Observaciones</th></tr></thead>
-        <tbody>{players.data.map(p => <tr key={p.id}><td><b>{p.full_name}</b></td>{type.fields.map(f => <td key={f.key}><input type="number" step={Math.pow(10, -f.decimals)} value={vals[p.id]?.[f.key] ?? ''} onChange={e => setVals(o => ({ ...o, [p.id]: { ...o[p.id], [f.key]: e.target.value } }))} style={{ maxWidth: 120 }} /></td>)}
+      <div className="table-wrap"><table className="t"><thead><tr><th>Jugador</th>{inFields.map(f => <th key={f.key}>{f.label}{f.unit ? ` (${f.unit})` : ''}</th>)}<th>Observaciones</th></tr></thead>
+        <tbody>{players.data.map(p => <tr key={p.id}><td><b>{p.full_name}</b></td>{inFields.map(f => <td key={f.key}><input type="number" step={Math.pow(10, -f.decimals)} value={vals[p.id]?.[f.key] ?? ''} onChange={e => setVals(o => ({ ...o, [p.id]: { ...o[p.id], [f.key]: e.target.value } }))} style={{ maxWidth: 120 }} /></td>)}
           <td><input type="text" value={vals[p.id]?.__notes ?? ''} onChange={e => setVals(o => ({ ...o, [p.id]: { ...o[p.id], __notes: e.target.value } }))} /></td></tr>)}</tbody></table></div>}
+    {isIFT(type) && <div className="alert info small"><span>ⓘ</span><div>Al guardar, la app calcula automáticamente el <b>VO₂máx estimado</b> de cada jugador. {VO2_NOTE} El peso usado es el registro de «Peso corporal» más cercano a la fecha del test.</div></div>}
     <ErrorBox error={err} />
     <button className="btn primary" style={{ alignSelf: 'flex-start' }} onClick={save}>Guardar resultados</button>
+    {saved?.length > 0 && <VO2Saved rows={saved} onClose={() => setSaved(null)} />}
   </div>;
 }
 
-function History({ type }) {
+function VO2Saved({ rows, onClose }) {
+  return <div className="card vo2-card"><div className="row between"><h3 style={{ margin: 0 }}>VO₂máx estimado · {fmtDate(rows[0].date)}</h3><button className="btn sm ghost" onClick={onClose}>Cerrar</button></div>
+    <table className="t small"><thead><tr><th>Jugador</th><th className="n">VIFT (km/h)</th><th className="n">VO₂máx estimado (ml/kg/min)</th><th>Datos usados</th></tr></thead>
+      <tbody>{rows.map(r => <tr key={r.id}><td><b>{r.player_name}</b></td><td className="n">{fmtNum(r.values.vift, 1)}</td>
+        <td className="n">{r.vo2?.value != null ? <b>{fmtNum(r.vo2.value, 1)}</b> : <span className="muted">—</span>}</td>
+        <td className={r.vo2?.value == null ? 'small warn-t' : 'small muted'}>{vo2Detail(r.vo2)}{r.vo2?.value == null && ' · complétalo en la ficha del jugador y se calculará solo'}</td></tr>)}</tbody></table>
+    <p className="small muted" style={{ margin: 0 }}>{VO2_NOTE}</p></div>;
+}
+
+function History({ type: baseType }) {
+  const type = withVO2(baseType);
   const toast = useToast();
   const l = useApi('/team/tests?type_id=' + type.id);
   const [edit, setEdit] = useState(null);
   const [del, setDel] = useState(null);
   const cols = [{ key: 'date', label: 'Fecha' }, { key: 'player_name', label: 'Jugador' }, ...type.fields.map(f => ({ key: f.key, label: `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}`, align: 'right' })), { key: 'device', label: 'Dispositivo' }, { key: 'protocol', label: 'Protocolo' }, { key: 'conditions', label: 'Condiciones' }, { key: 'notes', label: 'Observaciones' }];
-  const rows = (l.data || []).map(r => ({ ...r, ...r.values }));
+  const rows = (l.data || []).map(mergeVO2).map(r => ({ ...r, ...r.values, vo2info: r.vo2 }));
   return <div className="stack">
+    {isIFT(type) && <p className="small muted" style={{ margin: 0 }}>{VO2_NOTE}</p>}
     <div className="row"><span className="spacer" /><button className="btn" onClick={() => exportCSV(rows, cols, `tests-${type.name}.csv`)}>CSV</button><button className="btn" onClick={() => exportXLSX([{ name: type.name.slice(0, 30), columns: cols, rows }], `tests-${type.name}.xlsx`)}>Excel</button></div>
     {l.loading ? <Loading /> : !rows.length ? <Empty title="Sin resultados registrados para este test" /> :
       <div className="table-wrap"><table className="t"><thead><tr>{cols.map(c => <th key={c.key} className={c.align ? 'n' : ''}>{c.label}</th>)}<th /></tr></thead>
-        <tbody>{rows.map(r => <tr key={r.id}><td>{fmtDate(r.date)}</td><td><b>{r.player_name}</b></td>{type.fields.map(f => <td key={f.key} className="n">{fmtNum(r[f.key], f.decimals)}</td>)}
+        <tbody>{rows.map(r => <tr key={r.id}><td>{fmtDate(r.date)}</td><td><b>{r.player_name}</b></td>{type.fields.map(f => <td key={f.key} className="n" title={f.virtual ? vo2Detail(r.vo2info) : undefined}>{f.virtual && r[f.key] == null ? <span className="muted" title={vo2Detail(r.vo2info)}>falta dato</span> : fmtNum(r[f.key], f.decimals)}</td>)}
           <td className="small">{r.device || '—'}</td><td className="small" style={{ maxWidth: 200 }}>{r.protocol || '—'}</td><td className="small">{r.conditions || '—'}</td><td className="small">{r.notes || ''}</td>
           <td><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><button className="btn sm ghost" onClick={() => setEdit(r)}>Editar</button><button className="btn sm ghost" onClick={() => setDel(r)}>×</button></div></td></tr>)}</tbody></table></div>}
-    {edit && <EditResult r={edit} type={type} onClose={() => setEdit(null)} onSaved={() => { l.reload(); toast('Resultado actualizado'); }} />}
+    {edit && <EditResult r={edit} type={baseType} onClose={() => setEdit(null)} onSaved={() => { l.reload(); toast('Resultado actualizado'); }} />}
     {del && <Confirm title="Eliminar resultado" danger confirmText="Eliminar" message={`¿Eliminar el resultado de ${del.player_name} del ${fmtDate(del.date)}?`} onConfirm={async () => { await api.del('/team/tests/' + del.id); l.reload(); }} onClose={() => setDel(null)} />}
   </div>;
 }
@@ -88,26 +120,28 @@ function EditResult({ r, type, onClose, onSaved }) {
   </Modal>;
 }
 
-function Compare({ type }) {
+function Compare({ type: baseType }) {
+  const type = withVO2(baseType);
   const l = useApi('/team/tests?type_id=' + type.id);
   const [field, setField] = useState(type.fields[0].key);
   const [player, setPlayer] = useState('');
   const [proto, setProto] = useState('');
-  useEffect(() => setField(type.fields[0].key), [type.id, type.fields]);
+  useEffect(() => setField(isIFT(baseType) ? 'vo2' : baseType.fields[0].key), [baseType.id]); // eslint-disable-line
   const f = type.fields.find(x => x.key === field) || type.fields[0];
-  const data = l.data || [];
+  const data = useMemo(() => (l.data || []).map(mergeVO2), [l.data]);
   const protocols = [...new Set(data.map(r => (r.protocol || '').trim()).filter(Boolean))];
   const playersL = [...new Map(data.map(r => [r.player_id, r.player_name])).entries()];
   const latest = useMemo(() => {
     const m = new Map();
-    for (const r of data) if ((!proto || (r.protocol || '').trim() === proto) && r.values[f.key] !== null && !m.has(r.player_id)) m.set(r.player_id, { name: r.player_name, value: r.values[f.key], date: r.date, device: r.device });
+    for (const r of data) if ((!proto || (r.protocol || '').trim() === proto) && r.values[f.key] != null && !m.has(r.player_id)) m.set(r.player_id, { name: r.player_name, value: r.values[f.key], date: r.date, device: r.device });
     return [...m.values()].sort((a, b) => (f.better === 'lower' ? a.value - b.value : b.value - a.value));
   }, [data, proto, f]);
-  const evo = data.filter(r => String(r.player_id) === player).reverse().map(r => ({ date: r.date, v: r.values[f.key] }));
+  const evo = data.filter(r => String(r.player_id) === player && r.values[f.key] != null).reverse().map(r => ({ date: r.date, v: r.values[f.key] }));
   const devices = new Set(latest.map(x => x.device || '—'));
   if (l.loading) return <Loading />;
   if (!data.length) return <Empty title="Sin resultados para comparar" />;
   return <div className="stack" style={{ gap: 14 }}>
+    {f.virtual && <div className="alert info small"><span>ⓘ</span><div>{VO2_NOTE}</div></div>}
     <div className="row"><Field label="Variable"><select value={field} onChange={e => setField(e.target.value)}>{type.fields.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}</select></Field>
       <Field label="Protocolo (para comparar entre jugadores)"><select value={proto} onChange={e => setProto(e.target.value)}><option value="">Todos</option>{protocols.map(p => <option key={p} value={p}>{p.slice(0, 60)}</option>)}</select></Field></div>
     <div className="grid g2">

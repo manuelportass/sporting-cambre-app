@@ -22,6 +22,8 @@ import TeamPlayer from './pages/team/TeamPlayer';
 import Sessions from './pages/team/Sessions';
 import Matches from './pages/team/Matches';
 import Tests from './pages/team/Tests';
+import Fines from './pages/team/Fines';
+import { TeamRpe, TeamWellness } from './pages/team/TeamCheckins';
 import Accounts from './pages/team/Accounts';
 import Methodology from './pages/team/Methodology';
 import PlayerApp from './pages/player/PlayerApp';
@@ -99,6 +101,9 @@ export default function App() {
               <Route path="primer-equipo/sesiones" element={<Sessions />} />
               <Route path="primer-equipo/partidos" element={<Matches />} />
               <Route path="primer-equipo/tests" element={<Tests />} />
+              <Route path="primer-equipo/multas" element={<Fines />} />
+              <Route path="primer-equipo/wellness" element={<TeamWellness />} />
+              <Route path="primer-equipo/rpe" element={<TeamRpe />} />
               <Route path="primer-equipo/cuentas" element={<Accounts />} />
               <Route path="primer-equipo/metodologia" element={<Methodology />} />
               <Route path="configuracion" element={<Settings />} />

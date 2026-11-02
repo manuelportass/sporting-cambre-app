@@ -18,7 +18,7 @@ function notFuture(date) { if (date > today()) throw bad('No se pueden registrar
 function notTooOld(date, days = 14) { if (L.diffDays(date, today()) > days) throw bad(`Solo se pueden registrar sesiones de los últimos ${days} días. Si necesitas registrar algo anterior, habla con el preparador físico.`); }
 
 r.get('/profile', h((req, res) => {
-  const p = db.prepare('SELECT p.id, p.first_name, p.last_name, p.position, p.dominant_leg, p.photo_file_id, c.name AS category_name FROM players p LEFT JOIN categories c ON c.id=p.category_id WHERE p.id=?').get(pid(req));
+  const p = db.prepare('SELECT p.id, p.first_name, p.last_name, p.nickname, p.position, p.dominant_leg, p.photo_file_id, c.name AS category_name FROM players p LEFT JOIN categories c ON c.id=p.category_id WHERE p.id=?').get(pid(req));
   if (!p) throw notFound();
   const s = settings();
   res.json({ ...p, full_name: `${p.first_name} ${p.last_name}`.trim(), view: s.playerView });
@@ -227,7 +227,17 @@ r.get('/progress', h((req, res) => {
       : ratio < (b.green?.[0] ?? 0.8) ? { code: 'baja', title: 'Semana más suave de lo habitual', text: 'Estás entrenando menos que en las últimas semanas.' }
       : ratio <= (b.green?.[1] ?? 1.3) ? { code: 'ok', title: 'Carga equilibrada', text: 'Estás entrenando en tu nivel habitual. ¡Sigue así!' }
       : { code: 'alta', title: 'Semana más exigente de lo habitual', text: 'Estás acumulando más carga que en las últimas semanas. Descansa bien y cuéntale al preparador cómo te sientes.' };
-    out.load = { weeks, current: cur.load, average: avg, message: msg, ...(s.playerView.showAcwr ? { acwr: last?.acwr ?? null } : {}) };
+    out.load = { current: cur.load, average: avg, message: msg };
+    // ACWR (aguda:crónica) de las últimas semanas: media móvil y punto actual
+    if (s.playerView.showAcwr) {
+      const ser = T.playerSeries(pid(req), L.addDays(t, -7 * 10 + 1), t);
+      const lastV = [...ser].reverse().find(x => x.acwr != null) || null;
+      out.load.acwr = {
+        series: ser.map(x => ({ date: x.date, acwr: x.acwr ?? null, acwrColor: L.acwrColor(x.acwr, s.acwrBands) })),
+        current: lastV ? { date: lastV.date, value: lastV.acwr, color: L.acwrColor(lastV.acwr, s.acwrBands), acute: lastV.acute, chronic: lastV.chronic } : null,
+        bands: s.acwrBands, unit: ser[0]?.unit,
+      };
+    }
   }
   // Wellness: media de los últimos 7 días frente a los 7 anteriores
   const cfg = s.wellness;

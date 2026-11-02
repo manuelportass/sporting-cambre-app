@@ -4,6 +4,7 @@ import { normalizePlayerPhoto } from '../../lib/files';
 import { api } from '../../api';
 import { Avatar, Confirm, Empty, ErrorBox, ListRow, Loading, MoreMenu, PageHead, Tabs, useApi, useToast, ColorBadge } from '../../components/ui';
 import PlayerForm from '../../components/PlayerForm';
+import PhotoCapture from '../../components/PhotoCapture';
 import { saveBlob } from '../../lib/files';
 import { ATT_LABEL, INJ_COLOR, INJ_STATUS, WEEKDAYS, age, fmtDate, fmtDateTime } from '../../lib/format';
 
@@ -21,6 +22,7 @@ export default function PlayerProfile() {
   const [tab, setTab] = useState('ficha');
   const [edit, setEdit] = useState(false);
   const [del, setDel] = useState(false);
+  const [cam, setCam] = useState(false);
   if (p.loading) return <Loading />;
   if (p.error) return <ErrorBox error={p.error} />;
   const d = p.data;
@@ -44,7 +46,7 @@ export default function PlayerProfile() {
   return <div>
     <PageHead back="/jugadores" eyebrow={d.category_name || 'Sin categoría'} title={d.full_name} actions={<>
       <MoreMenu items={[
-        { label: d.photo_file_id ? 'Sustituir foto' : 'Subir foto', onClick: () => document.getElementById('photo-input').click() },
+        { label: d.photo_file_id ? 'Sustituir foto' : 'Subir foto', onClick: () => setCam(true) },
         d.photo_file_id && { label: 'Eliminar foto', onClick: removePhoto },
         d.category_code === 'senior' && { label: 'Ver en primer equipo', onClick: () => nav('/primer-equipo/jugador/' + id) },
         { label: 'Registrar lesión', onClick: () => nav('/lesiones?player=' + id) },
@@ -56,7 +58,11 @@ export default function PlayerProfile() {
     <input id="photo-input" type="file" accept="image/*" hidden onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) uploadPhoto(f); }} />
     <Tabs value={tab} onChange={setTab} tabs={[{ key: 'ficha', label: 'Ficha' }, { key: 'gym', label: 'Asistencia' }, { key: 'lesiones', label: 'Lesiones' }, { key: 'historial', label: 'Cambios' }]} />
     {tab === 'ficha' && <div className="card row" style={{ alignItems: 'flex-start', gap: 20 }}>
-      <Avatar name={d.full_name} fileId={d.photo_file_id} size="lg" />
+      <div className="stack" style={{ gap: 6, alignItems: 'center' }}>
+        <button className="pp-photo" onClick={() => setCam(true)} title={d.photo_file_id ? 'Cambiar foto' : 'Añadir foto'}>
+          <Avatar name={d.full_name} fileId={d.photo_file_id} size="lg" /><span className="avcam-b big" aria-hidden="true">📷</span></button>
+        <button className="btn sm ghost" onClick={() => setCam(true)}>{d.photo_file_id ? 'Cambiar foto' : 'Añadir foto'}</button>
+      </div>
       <div className="stack" style={{ flex: 1, minWidth: 220 }}>
         <dl className="grid g2" style={{ margin: 0, gap: 12 }}>{filled.map(([k, v]) => <Item key={k} k={k}>{v}</Item>)}</dl>
         {d.notes && <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{d.notes}</p>}
@@ -73,6 +79,7 @@ export default function PlayerProfile() {
     {tab === 'lesiones' && (inj.loading ? <Loading /> : !inj.data.length ? <Empty title="Sin lesiones registradas" /> :
       <div className="list">{inj.data.map(i => <ListRow key={i.id} onClick={() => nav('/lesiones/' + i.id)} title={`${i.zone || 'Lesión'}${i.laterality ? ' · ' + i.laterality : ''}`} sub={fmtDate(i.injury_date)} right={<ColorBadge color={INJ_COLOR[i.status]}>{INJ_STATUS[i.status]}</ColorBadge>} />)}</div>)}
     {tab === 'historial' && (audit.loading ? <Loading /> : <AuditList rows={audit.data} />)}
+    {cam && <PhotoCapture player={d} onSaved={reload} onClose={() => setCam(false)} />}
     {edit && <PlayerForm player={d} onClose={() => setEdit(false)} onSaved={reload} />}
     {del && <Confirm title="Eliminar jugador" danger confirmText="Eliminar definitivamente" requireText={d.full_name}
       message={<>Esta acción <b>no se puede deshacer</b>. Se eliminarán todos los datos de {d.full_name} en los tres módulos.</>}

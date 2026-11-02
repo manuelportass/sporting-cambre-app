@@ -108,6 +108,10 @@ function validateSetting(key, v) {
   if (key === 'notifications') {
     for (const k of ['wellness', 'rpe', 'eva']) if (v[k] && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v[k].time || '')) throw bad('Hora no válida (HH:MM).');
   }
+  if (key === 'fines') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v.startDate || '')) throw bad('Fecha de inicio no válida.');
+    num(v.amount, 'Importe', { min: 0, max: 1000, required: true });
+  }
   if (key === 'collectiveDays' && (!Array.isArray(v) || v.some(d => !Number.isInteger(d) || d < 1 || d > 7))) throw bad('Días no válidos.');
 }
 
@@ -164,7 +168,7 @@ r.post('/club/crest', A.requireAdmin, upload.single('file'), h((req, res) => {
 }));
 
 // ---------- Jugadores (registro único) ----------
-const PLAYER_FIELDS = ['first_name', 'last_name', 'category_id', 'position', 'dominant_leg', 'joined_at', 'notes', 'availability', 'custom', 'active'];
+const PLAYER_FIELDS = ['first_name', 'last_name', 'category_id', 'position', 'dominant_leg', 'sex', 'nickname', 'joined_at', 'notes', 'availability', 'custom', 'active'];
 const PRIVATE_FIELDS = ['birth_date', 'weight_kg', 'height_cm', 'anthropometry', 'sports_history'];
 
 function playerRow(p) {
@@ -181,6 +185,8 @@ function cleanPlayer(b, partial) {
   }
   if (b.position !== undefined) o.position = optText(b.position, 60);
   if (b.dominant_leg !== undefined) o.dominant_leg = b.dominant_leg ? oneOf(b.dominant_leg, ['derecha', 'izquierda', 'ambas'], 'Pierna dominante') : null;
+  if (b.nickname !== undefined) o.nickname = optText(b.nickname, 40);
+  if (b.sex !== undefined) o.sex = b.sex ? oneOf(b.sex, ['M', 'F'], 'Sexo') : null;
   if (b.joined_at !== undefined) o.joined_at = optDate(b.joined_at, 'Fecha de incorporación');
   if (b.notes !== undefined) o.notes = optText(b.notes);
   if (b.availability !== undefined) o.availability = oneOf({ no_disponible: 'lesionado', pendiente: 'disponible' }[b.availability] || b.availability, ['disponible', 'limitado', 'lesionado'], 'Disponibilidad');
@@ -416,6 +422,8 @@ r.post('/players/import/commit', A.requireAdmin, h((req, res) => {
         const info = db.prepare('INSERT INTO players(first_name,last_name,name_key,category_id,joined_at,notes) VALUES (?,?,?,?,?,?)')
           .run(first, last, key, r0.category_id || null, optDate(r0.joined_at, 'Fecha de incorporación'), optText(r0.notes));
         p = { id: info.lastInsertRowid }; created++;
+        // Primer equipo (masculino): sexo necesario para el VO₂máx estimado; editable en la ficha
+        if (r0.category_id && db.prepare("SELECT 1 FROM categories WHERE id=? AND code='senior'").get(r0.category_id)) db.prepare("UPDATE players SET sex='M' WHERE id=?").run(p.id);
         audit('player', p.id, 'import_create', null, r0, req.user.id);
       } else {
         const upd = {};
