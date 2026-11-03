@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS users (
   username_key TEXT UNIQUE NOT NULL,  -- nombre completo normalizado
   display_name TEXT NOT NULL,
   pin_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin','player')),
+  role TEXT NOT NULL CHECK (role IN ('admin','player','coach')), -- coach = entrenador (solo lectura del primer equipo)
   player_id INTEGER UNIQUE REFERENCES players(id) ON DELETE CASCADE,
   active INTEGER DEFAULT 1,
   must_change_pin INTEGER DEFAULT 0,
@@ -377,6 +377,22 @@ db.exec("UPDATE players SET availability='disponible' WHERE availability IS NULL
 if (!cols('players').includes('sex')) {
   db.exec('ALTER TABLE players ADD COLUMN sex TEXT');
   db.exec("UPDATE players SET sex='M' WHERE category_id IN (SELECT id FROM categories WHERE code='senior')");
+}
+// Rol «coach» (entrenador, solo lectura del primer equipo): las bases de datos anteriores solo admitían admin/player
+if (!/'coach'/.test(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get().sql)) {
+  db.pragma('foreign_keys = OFF');
+  db.exec(`BEGIN;
+    CREATE TABLE users_new (
+      id INTEGER PRIMARY KEY, username_key TEXT UNIQUE NOT NULL, display_name TEXT NOT NULL, pin_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('admin','player','coach')),
+      player_id INTEGER UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+      active INTEGER DEFAULT 1, must_change_pin INTEGER DEFAULT 0, last_login TEXT, created_at TEXT DEFAULT (datetime('now')));
+    INSERT INTO users_new(id,username_key,display_name,pin_hash,role,player_id,active,must_change_pin,last_login,created_at)
+      SELECT id,username_key,display_name,pin_hash,role,player_id,active,must_change_pin,last_login,created_at FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_new RENAME TO users;
+    COMMIT;`);
+  db.pragma('foreign_keys = ON');
 }
 // Apodo del jugador (saludo en su pantalla de inicio)
 if (!cols('players').includes('nickname')) db.exec('ALTER TABLE players ADD COLUMN nickname TEXT');

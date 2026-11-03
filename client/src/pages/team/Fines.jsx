@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { api } from '../../api';
 import { Avatar, Empty, ErrorBox, Field, Loading, Modal, PageHead, Seg, useApi, useToast } from '../../components/ui';
 import { exportXLSX } from '../../lib/files';
+import { useReadOnly } from '../../App';
 import { WEEKDAYS, fmtDate } from '../../lib/format';
 
 const ST = { pendiente: ['Pendiente', 'var(--rojo)'], pagada: ['Pagada', 'var(--verde)'], anulada: ['Anulada', 'var(--gris, #9a9b95)'] };
@@ -13,6 +14,7 @@ export default function Fines() {
   const d = useApi('/team/fines');
   const s = useApi('/settings');
   const toast = useToast();
+  const ro = useReadOnly();
   const [st, setSt] = useState('pendiente');
   const [player, setPlayer] = useState(null);
   const [act, setAct] = useState(null); // { f, status }
@@ -40,7 +42,7 @@ export default function Fines() {
   return <div>
     <PageHead back="/primer-equipo" title="Multas" sub={c.enabled ? `En vigor desde el ${fmtDate(c.startDate)}` : 'Desactivadas'} actions={<>
       {list.length > 0 && <button className="btn" onClick={exportX}>Excel</button>}
-      <button className="btn" onClick={() => setCfg(true)}>Ajustes</button></>} />
+      {!ro && <button className="btn" onClick={() => setCfg(true)}>Ajustes</button>}</>} />
 
     <div className="card fine-rule">
       <div className="fr-steps">
@@ -74,8 +76,8 @@ export default function Fines() {
             <span className="lrow-s">{player ? f.reason : `${fmtDate(f.date, { weekday: 'short', day: 'numeric', month: 'short' })} · ${f.reason}`}{f.note ? ` · ${f.note}` : ''}</span></span>
           <b className="fine-amt">{eur(f.amount)}</b>
           <span className="fine-st" style={{ '--c': ST[f.status][1] }}>{ST[f.status][0]}</span>
-          <span className="fine-act">{f.status === 'pendiente' ? <><button className="btn sm" onClick={() => setAct({ f, status: 'pagada' })}>Pagada</button><button className="btn sm ghost" onClick={() => setAct({ f, status: 'anulada' })}>Anular</button></>
-            : <button className="btn sm ghost" onClick={() => setAct({ f, status: 'pendiente' })}>Reabrir</button>}</span>
+          {!ro && <span className="fine-act">{f.status === 'pendiente' ? <><button className="btn sm" onClick={() => setAct({ f, status: 'pagada' })}>Pagada</button><button className="btn sm ghost" onClick={() => setAct({ f, status: 'anulada' })}>Anular</button></>
+            : <button className="btn sm ghost" onClick={() => setAct({ f, status: 'pendiente' })}>Reabrir</button>}</span>}
         </div>)}</div>}
       </div>
     </div>}

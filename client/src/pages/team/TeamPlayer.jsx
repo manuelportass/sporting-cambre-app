@@ -1,4 +1,5 @@
 import PhotoCapture from '../../components/PhotoCapture';
+import { useReadOnly } from '../../App';
 import { LVChart, LV_TEST } from '../../components/SquatLab';
 import { linfit, loadFor, PCTS } from '../../lib/bar';
 import { IFT, VO2_FIELD, VO2_NOTE, mergeVO2, vo2Detail } from '../../lib/vo2';
@@ -15,6 +16,7 @@ export default function TeamPlayer() {
   const { id } = useParams();
   const nav = useNavigate();
   const s = useApi('/team/players/' + id + '/summary');
+  const ro = useReadOnly();
   const [tab, setTab] = useState('resumen');
   if (s.loading && !s.data) return <Loading />;
   if (s.error) return <ErrorBox error={s.error} />;
@@ -22,15 +24,15 @@ export default function TeamPlayer() {
   return <div>
     <PageHead back="/primer-equipo/jugadores" eyebrow={<span className="row" style={{ gap: 6 }}><span className="sdot" style={{ background: `var(--${AVAIL_COLOR[availability.code]})` }} />{availability.label}</span>} title={p.full_name}
       sub={[p.position, p.age !== null ? p.age + ' años' : null].filter(Boolean).join(' · ') || null}
-      actions={<MoreMenu items={[{ label: 'Ficha general del jugador', onClick: () => nav('/jugadores/' + id) }, { label: 'Disponibilidad y observaciones', onClick: () => setTab('general') }]} />} />
-    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resumen', label: 'Resumen' }, { key: 'carga', label: 'Carga' }, { key: 'wellness', label: 'Wellness' }, { key: 'competicion', label: 'Partidos' }, { key: 'tests', label: 'Tests' }, { key: 'lesiones', label: `Lesiones${s.data.injuries.length ? ` (${s.data.injuries.length})` : ''}` }, { key: 'registros', label: 'Registros' }, { key: 'general', label: 'Ficha' }]} />
+      actions={ro ? null : <MoreMenu items={[{ label: 'Ficha general del jugador', onClick: () => nav('/jugadores/' + id) }, { label: 'Disponibilidad y observaciones', onClick: () => setTab('general') }]} />} />
+    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resumen', label: 'Resumen' }, { key: 'carga', label: 'Carga' }, { key: 'wellness', label: 'Wellness' }, { key: 'competicion', label: 'Partidos' }, { key: 'tests', label: 'Tests' }, { key: 'lesiones', label: `Lesiones${s.data.injuries.length ? ` (${s.data.injuries.length})` : ''}` }, { key: 'registros', label: 'Registros' }, { key: 'general', label: 'Ficha' }].filter(t => !ro || t.key !== 'lesiones')} />
     {tab === 'resumen' && <Overview id={id} data={s.data} go={setTab} />}
     {tab === 'carga' && <LoadTab id={id} />}
     {tab === 'wellness' && <WellnessTab id={id} />}
     {tab === 'registros' && <EntriesTab id={id} />}
     {tab === 'competicion' && <CompetitionTab data={s.data} />}
     {tab === 'tests' && <TestsTab tests={s.data.tests} />}
-    {tab === 'lesiones' && <InjuriesTab data={s.data} />}
+    {tab === 'lesiones' && !ro && <InjuriesTab data={s.data} />}
     {tab === 'general' && <GeneralTab data={s.data} reload={s.reload} />}
   </div>;
 }
@@ -148,14 +150,15 @@ function EntriesTab({ id }) {
   const l = useApi(`/team/load?player_id=${id}&from=${from}&to=${to}&include_void=1`);
   const [add, setAdd] = useState(false);
   const [corr, setCorr] = useState(null);
+  const ro = useReadOnly();
   return <div className="stack">
-    <div className="row"><Field label="Desde"><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></Field><span className="spacer" /><button className="btn primary" onClick={() => setAdd(true)}>+ Registrar carga</button></div>
+    <div className="row"><Field label="Desde"><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></Field><span className="spacer" />{!ro && <button className="btn primary" onClick={() => setAdd(true)}>+ Registrar carga</button>}</div>
     {l.loading ? <Loading /> : !l.data.length ? <Empty title="Sin registros en este periodo" /> :
       <div className="table-wrap"><table className="t"><thead><tr><th>Fecha</th><th>Tipo</th><th>Sesión</th><th className="n">Min</th><th className="n">RPE</th><th className="n">Carga (UA)</th><th>Observaciones</th><th>Estado</th><th /></tr></thead>
         <tbody>{l.data.map(e => <tr key={e.id} style={{ opacity: e.status === 'anulado' ? 0.5 : 1 }}><td>{fmtDate(e.date)}</td><td><span className="tag">{e.kind}</span></td><td className="small">{e.session_type}{e.description ? ' · ' + e.description : ''}</td>
           <td className="n">{fmtNum(e.duration_min)}</td><td className="n">{fmtNum(e.rpe)}</td><td className="n"><b>{fmtNum(e.load_au)}</b></td><td className="small">{e.notes}</td>
           <td className="small">{e.status === 'anulado' ? 'Anulado' + (e.superseded_by ? ' (corregido)' : '') : 'Válido'}</td>
-          <td>{e.status === 'valido' && <button className="btn sm" onClick={() => setCorr(e)}>Corregir</button>}</td></tr>)}</tbody></table></div>}
+          <td>{e.status === 'valido' && !ro && <button className="btn sm" onClick={() => setCorr(e)}>Corregir</button>}</td></tr>)}</tbody></table></div>}
     {add && <LoadEntryModal playerId={id} onClose={() => setAdd(false)} onSaved={() => { l.reload(); toast('Carga registrada'); }} />}
     {corr && <CorrectModal e={corr} onClose={() => setCorr(null)} onSaved={() => { l.reload(); toast('Registro corregido (el original queda anulado en el historial)'); }} />}
   </div>;
@@ -325,6 +328,7 @@ function PhotoBox({ p, reload }) {
 // Peso corporal: se registra como test para ver su evolución durante la temporada
 function WeightBox({ data, reload }) {
   const toast = useToast();
+  const ro = useReadOnly();
   const types = useApi('/team/test-types');
   const list = data.tests.filter(t => t.name === 'Peso corporal').map(t => ({ date: t.date, peso: t.values.peso })).filter(x => x.peso != null).sort((a, b) => a.date.localeCompare(b.date));
   const [v, setV] = useState({ peso: '', date: todayISO() });
@@ -342,16 +346,17 @@ function WeightBox({ data, reload }) {
       {prev && <div>Desde el anterior: <b>{sign(diff(last, prev))} kg</b></div>}
       {list.length > 2 && <div>Desde el inicio: <b>{sign(diff(last, first))} kg</b></div>}</div></div> : <p className="small muted" style={{ margin: '6px 0' }}>Sin registros de peso.</p>}
     {list.length >= 2 && <MultiLine data={list} lines={[{ key: 'peso', label: 'Peso (kg)' }]} decimals={1} height={140} />}
-    <div className="row" style={{ gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
+    {!ro && <div className="row" style={{ gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
       <Field label="Nuevo peso (kg)"><input type="number" min="30" max="200" step="0.1" value={v.peso} onChange={e => setV({ ...v, peso: e.target.value })} style={{ width: 110 }} /></Field>
       <Field label="Fecha"><input type="date" value={v.date} max={todayISO()} onChange={e => setV({ ...v, date: e.target.value })} /></Field>
-      <button className="btn primary" disabled={!v.peso} onClick={save}>Registrar</button></div>
+      <button className="btn primary" disabled={!v.peso} onClick={save}>Registrar</button></div>}
   </div>;
 }
 const POSITIONS = ['Portero', 'Defensa', 'Lateral', 'Medio', 'Delantero', 'Extremo'];
 const AVAIL = [['disponible', 'Disponible', 'var(--verde)'], ['limitado', 'Limitado', 'var(--amarillo)'], ['lesionado', 'Lesionado', 'var(--rojo)']];
 function GeneralTab({ data, reload }) {
   const toast = useToast();
+  const ro = useReadOnly();
   const p = data.player;
   const cur = p.availability === 'no_disponible' || p.availability === 'lesionado' ? 'lesionado' : p.availability === 'limitado' ? 'limitado' : 'disponible';
   const [v, setV] = useState({ nickname: p.nickname || '', position: p.position || '', age: p.age_input ?? (p.birth_date ? '' : p.age ?? ''), dominant_leg: p.dominant_leg || '', sex: p.sex || '', availability: cur, notes: p.notes || '' });
@@ -362,7 +367,7 @@ function GeneralTab({ data, reload }) {
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   return <div className="grid g2" style={{ alignItems: 'start' }}>
-    <div className="card stack"><h3>Ficha del jugador</h3>
+    <fieldset disabled={ro} className="card stack ro-fs"><h3>Ficha del jugador</h3>
       <div className="inline-fields">
         <Field label="Apodo" hint="saludo de su app"><input type="text" maxLength={40} value={v.nickname} placeholder={(p.first_name || '').split(' ')[0]} onChange={e => setV({ ...v, nickname: e.target.value })} /></Field>
         <Field label="Posición"><select value={posGroup(v.position) || ''} onChange={e => setV({ ...v, position: e.target.value })}><option value="">—</option>{POSITIONS.map(x => <option key={x}>{x}</option>)}</select></Field>
@@ -376,13 +381,13 @@ function GeneralTab({ data, reload }) {
         <div className="segpick avail">{AVAIL.map(([k, l, c]) => <button key={k} type="button" className={v.availability === k ? 'on' : ''} style={{ '--c': c }} onClick={() => setV({ ...v, availability: k })}><i />{l}</button>)}</div>
         {data.availability.source === 'lesion' && <div className="alert warn small" style={{ marginTop: 8 }}><span>⚠</span><div>Tiene un proceso de lesión abierto: mientras siga abierto, la app lo muestra como «{data.availability.label}».</div></div>}</div>
       <Field label="Observaciones del preparador físico"><textarea value={v.notes} onChange={e => setV({ ...v, notes: e.target.value })} /></Field>
-      <button className="btn primary" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={save}>{busy ? 'Guardando…' : 'Guardar ficha'}</button>
-    </div>
+      {!ro && <button className="btn primary" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={save}>{busy ? 'Guardando…' : 'Guardar ficha'}</button>}
+    </fieldset>
     <div className="stack" style={{ gap: 14 }}>
-      <PhotoBox p={p} reload={reload} />
+      {!ro && <PhotoBox p={p} reload={reload} />}
       <WeightBox data={data} reload={reload} />
-      <div className="card"><h3>Historial de lesiones</h3>{!data.injuries.length ? <p className="muted small">Sin lesiones registradas.</p> : data.injuries.map(i => <div key={i.id} className="row small" style={{ borderBottom: '1px solid var(--line)', padding: '5px 0' }}>
-        <Link to={'/lesiones/' + i.id}>{fmtDate(i.injury_date)} · {i.zone || 'Lesión'}{i.laterality ? ` (${i.laterality})` : ''}</Link><span className="spacer" /><ColorBadge color={INJ_COLOR[i.status]}>{INJ_STATUS[i.status]}</ColorBadge></div>)}</div>
+      {!ro && <div className="card"><h3>Historial de lesiones</h3>{!data.injuries.length ? <p className="muted small">Sin lesiones registradas.</p> : data.injuries.map(i => <div key={i.id} className="row small" style={{ borderBottom: '1px solid var(--line)', padding: '5px 0' }}>
+        <Link to={'/lesiones/' + i.id}>{fmtDate(i.injury_date)} · {i.zone || 'Lesión'}{i.laterality ? ` (${i.laterality})` : ''}</Link><span className="spacer" /><ColorBadge color={INJ_COLOR[i.status]}>{INJ_STATUS[i.status]}</ColorBadge></div>)}</div>}
       <div className="card"><h3>Asistencia a entrenamientos</h3>{!data.attendance.length ? <p className="muted small">Sin sesiones programadas.</p> :
         <div style={{ maxHeight: 300, overflow: 'auto' }}>{data.attendance.map((a, k) => <div key={k} className="row small" style={{ borderBottom: '1px solid var(--line)', padding: '4px 0' }}><span style={{ minWidth: 90 }}>{fmtDate(a.date)}</span><span>{a.session_type}</span><span className="spacer" />{a.status ? ATT_LABEL[a.status] : <span className="muted">Sin marcar</span>}</div>)}</div>}</div>
     </div>

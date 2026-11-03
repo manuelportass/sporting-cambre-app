@@ -11,7 +11,7 @@ const VO2 = require('../lib/vo2');
 const F = require('../lib/fines');
 
 const r = express.Router();
-r.use(A.requireAdmin);
+r.use(A.requireTeamRead); // preparador: todo · entrenador: solo consultar
 
 const ATT = ['presente', 'ausente', 'justificada', 'lesionado'];
 const fullName = p => `${p.first_name} ${p.last_name}`.trim();
@@ -379,7 +379,8 @@ r.get('/players/:id/summary', h((req, res) => {
   const testsV = VO2.attach(tests);
   res.json({
     player: { ...p, custom: JSON.parse(p.custom || '{}'), full_name: fullName(p), age: priv.birth_date ? age(priv.birth_date) : (priv.age ?? null), age_input: priv.age ?? null, birth_date: priv.birth_date || null, weight_kg: priv.weight_kg ?? null },
-    availability: T.availability(p), injuries, attendance: att, matches, tests: testsV,
+    // El entrenador no ve datos médicos (fichas de lesión): solo la disponibilidad
+    availability: T.availability(p), injuries: req.user.role === 'coach' ? [] : injuries, attendance: att, matches, tests: testsV,
     trainings: trainingAttendance(p.id, today(), true), matchesPlayed: matchCount(p.id, today()), stats: seasonStats(p.id, seasonOf(today())),
     seasons: [...new Set(matches.map(m => m.season))],
   });

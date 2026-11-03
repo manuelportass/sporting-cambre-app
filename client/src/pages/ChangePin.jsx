@@ -8,7 +8,7 @@ export default function ChangePin({ forced, onDone }) {
   const toast = useToast();
   const [v, setV] = useState({ current: '', next: '', next2: '' });
   const [err, setErr] = useState(null);
-  const min = user.role === 'admin' ? 6 : 4;
+  const min = user.role === 'player' ? 4 : 6;
   const submit = async e => {
     e.preventDefault(); setErr(null);
     if (v.next !== v.next2) return setErr('Los PIN nuevos no coinciden.');

@@ -5,20 +5,21 @@ import { Crest } from '../Login';
 import { Confirm, Empty, ErrorBox, Field, FileButton, ListRow, Loading, Modal, PageHead, Tabs, useApi, useToast } from '../../components/ui';
 import { readTable, downloadTemplate, exportCSV, exportXLSX, saveBlob } from '../../lib/files';
 import { actaToRows, readActaFile } from '../../lib/acta';
-import { useClub } from '../../App';
+import { useClub, useReadOnly } from '../../App';
 import { fmtDate, fmtDateTime, seasonOf, todayISO } from '../../lib/format';
 
 export default function Matches() {
   const [tab, setTab] = useState('partidos');
+  const ro = useReadOnly();
   const seasons = useApi('/team/seasons');
   const [season, setSeason] = useState(seasonOf(todayISO()));
   const allSeasons = [...new Set([seasonOf(todayISO()), ...(seasons.data || [])])].sort().reverse();
   return <div>
     <PageHead back="/primer-equipo" title="Partidos" actions={<select value={season} onChange={e => setSeason(e.target.value)} aria-label="Temporada" style={{ width: 'auto' }}>{allSeasons.map(s => <option key={s}>{s}</option>)}<option value="">Todas</option></select>} />
-    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'partidos', label: 'Partidos' }, { key: 'estadisticas', label: 'Jugadores' }, { key: 'importar', label: 'Importar' }]} />
+    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'partidos', label: 'Partidos' }, { key: 'estadisticas', label: 'Jugadores' }, ...(ro ? [] : [{ key: 'importar', label: 'Importar' }])]} />
     {tab === 'partidos' && <MatchList season={season} />}
     {tab === 'estadisticas' && <StatsTable season={season} />}
-    {tab === 'importar' && <ImportMatches season={season} onDone={() => { seasons.reload(); setTab('partidos'); }} />}
+    {tab === 'importar' && !ro && <ImportMatches season={season} onDone={() => { seasons.reload(); setTab('partidos'); }} />}
   </div>;
 }
 
@@ -42,8 +43,9 @@ function MatchList({ season }) {
   const l = useApi('/team/matches' + (season ? '?season=' + encodeURIComponent(season) : ''));
   const [form, setForm] = useState(null);
   const [stats, setStats] = useState(null);
+  const ro = useReadOnly();
   return <div className="stack">
-    <div className="row"><span className="spacer" /><button className="btn primary" onClick={() => setForm({})}>+ Partido</button></div>
+    {!ro && <div className="row"><span className="spacer" /><button className="btn primary" onClick={() => setForm({})}>+ Partido</button></div>}
     {l.loading ? <Loading /> : !l.data.length ? <Empty title="No hay partidos en esta temporada">Añádelos con «+ Partido» o en la pestaña Importar.</Empty> :
       <div className="list">{l.data.map(m => <MatchRow key={m.id} m={m} onClick={() => setStats(m)} />)}</div>}
     {form && <MatchForm m={form.id ? form : null} onClose={() => setForm(null)} onSaved={() => { l.reload(); toast('Partido guardado'); }} />}
@@ -80,6 +82,7 @@ function MatchForm({ m, onClose, onSaved }) {
 
 function StatsEditor({ id, onClose, onEditMatch }) {
   const toast = useToast();
+  const ro = useReadOnly();
   const r = useApi('/team/matches/' + id);
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
@@ -97,22 +100,22 @@ function StatsEditor({ id, onClose, onEditMatch }) {
     } catch (e) { setErr(e.message); }
   };
   const m = r.data?.match;
-  return <Modal wide title={m ? `${m.opponent} · ${fmtDate(m.date)}` : 'Partido'} onClose={onClose} footer={<><button className="btn ghost" style={{ marginRight: 'auto' }} onClick={onEditMatch}>Editar datos del partido</button><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Guardar estadísticas</button></>}>
+  return <Modal wide title={m ? `${m.opponent} · ${fmtDate(m.date)}` : 'Partido'} onClose={onClose} footer={ro ? <button className="btn primary" onClick={onClose}>Cerrar</button> : <><button className="btn ghost" style={{ marginRight: 'auto' }} onClick={onEditMatch}>Editar datos del partido</button><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={save}>Guardar estadísticas</button></>}>
     {!rows ? <Loading /> : <>
       <div className="row" style={{ marginBottom: 10 }}>
         <b className="small">Acta:</b>
         {!r.data.files.length ? <span className="small muted">sin adjuntar</span> : r.data.files.map(f => <span key={f.id} className="row small" style={{ gap: 4 }}>{f.original_name}
           <button className="btn sm ghost" onClick={async () => { try { const res = await api.raw('GET', '/files/' + f.id); await saveBlob(await res.blob(), f.original_name); } catch (e) { toast(e.message, 'err'); } }}>Descargar</button>
-          <button className="btn sm ghost" onClick={async () => { await api.del('/team/matches/files/' + f.id); r.reload(); }}>Quitar</button></span>)}
-        <label className="btn sm">Adjuntar PDF<input type="file" accept="application/pdf,.pdf,image/*" hidden onChange={async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await api.upload(`/team/matches/${id}/files`, f); toast('Acta adjuntada'); r.reload(); } catch (x) { toast(x.message, 'err'); } }} /></label>
+          {!ro && <button className="btn sm ghost" onClick={async () => { await api.del('/team/matches/files/' + f.id); r.reload(); }}>Quitar</button>}</span>)}
+        {!ro && <label className="btn sm">Adjuntar PDF<input type="file" accept="application/pdf,.pdf,image/*" hidden onChange={async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await api.upload(`/team/matches/${id}/files`, f); toast('Acta adjuntada'); r.reload(); } catch (x) { toast(x.message, 'err'); } }} /></label>}
       </div>
-      <p className="small muted" style={{ marginTop: 0 }}>Marca los convocados. Deja vacío lo que no sepas (no cuenta como 0).</p>
-      <div className="table-wrap"><table className="t"><thead><tr><th>Conv.</th><th>Jugador</th><th>Titular</th><th>Minutos</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th><th>Fuente</th></tr></thead>
+      {!ro && <p className="small muted" style={{ marginTop: 0 }}>Marca los convocados. Deja vacío lo que no sepas (no cuenta como 0).</p>}
+      <fieldset disabled={ro} className="ro-fs"><div className="table-wrap"><table className="t"><thead><tr><th>Conv.</th><th>Jugador</th><th>Titular</th><th>Minutos</th><th>Goles</th><th>Asist.</th><th>TA</th><th>TR</th><th>Fuente</th></tr></thead>
         <tbody>{rows.map((x, i) => <tr key={x.player_id} style={{ opacity: x.on ? 1 : 0.5 }}>
           <td><input type="checkbox" checked={x.on} onChange={e => upd(i, 'on', e.target.checked)} /></td><td><b>{x.name}</b></td>
           <td><select value={x.started} onChange={e => upd(i, 'started', e.target.value)}><option value="">Sin dato</option><option value="si">Sí</option><option value="no">No</option></select></td>
           {['minutes', 'goals', 'assists', 'yellow', 'red'].map(k => <td key={k}><input type="number" min="0" style={{ width: 70 }} value={x[k]} onChange={e => upd(i, k, e.target.value)} /></td>)}
-          <td className="small muted">{x.source || ''}</td></tr>)}</tbody></table></div>
+          <td className="small muted">{x.source || ''}</td></tr>)}</tbody></table></div></fieldset>
       <ErrorBox error={err} />
     </>}
   </Modal>;

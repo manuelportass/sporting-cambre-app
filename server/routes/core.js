@@ -33,7 +33,7 @@ r.post('/auth/change-pin', A.requireAuth, h((req, res) => {
   const bcrypt = require('bcryptjs');
   const { current, next } = req.body || {};
   if (!bcrypt.compareSync(String(current || ''), req.user.pin_hash)) throw new HttpError(403, 'El PIN actual no es correcto.');
-  const min = req.user.role === 'admin' ? 6 : 4;
+  const min = req.user.role === 'player' ? 4 : 6;
   if (!A.validPin(String(next || '')) || String(next).length < min) throw bad(`El nuevo PIN debe tener al menos ${min} caracteres (letras o números).`);
   db.prepare('UPDATE users SET pin_hash=?, must_change_pin=0 WHERE id=?').run(A.hashPin(String(next)), req.user.id);
   audit('user', req.user.id, 'change_pin', null, null, req.user.id);
@@ -68,6 +68,7 @@ r.use(A.requireAuth);
 r.get('/settings', (req, res) => {
   const s = settings();
   if (req.user.role === 'admin') return res.json(s);
+  if (req.user.role === 'coach') { const { notifications, ...rest } = s; return res.json(rest); }
   // Los jugadores solo reciben lo necesario para sus formularios
   res.json({ club: { name: s.club.name, primary: s.club.primary, accent: s.club.accent, hasCrest: true }, wellness: s.wellness, rpeScale: s.rpeScale, collectiveDays: s.collectiveDays });
 });
@@ -135,6 +136,11 @@ function canReadFile(user, f) {
   if (user.role === 'admin') return true;
   if (f.owner_type === 'player_photo' && f.owner_id === user.player_id) return true;
   if (f.owner_type === 'club') return true;
+  // Entrenador: fotos de jugadores del primer equipo y documentos de partidos
+  if (user.role === 'coach') {
+    if (f.owner_type === 'player_photo') return !!db.prepare("SELECT 1 FROM players p JOIN categories c ON c.id=p.category_id WHERE p.id=? AND c.code='senior'").get(f.owner_id);
+    if (f.owner_type === 'match') return true;
+  }
   return false;
 }
 r.get('/files/:id', h((req, res) => {
@@ -211,8 +217,9 @@ function upsertPrivate(id, priv) {
   db.prepare(`UPDATE player_private SET ${sets} WHERE player_id=@id`).run({ ...priv, id });
 }
 
-r.get('/players', A.requireAdmin, (req, res) => {
-  const { category, q, active } = req.query;
+r.get('/players', A.requireStaff, (req, res) => {
+  const { q, active } = req.query;
+  const category = req.user.role === 'coach' ? 'senior' : req.query.category; // el entrenador solo ve el primer equipo
   let sql = `SELECT p.*, c.code AS category_code, c.name AS category_name,
       (SELECT GROUP_CONCAT(slot_id) FROM gym_assignments a WHERE a.player_id=p.id) AS slot_ids,
       (SELECT id FROM users u WHERE u.player_id=p.id) AS user_id,
@@ -515,9 +522,18 @@ r.post('/users', A.requireAdmin, h((req, res) => {
   audit('user', info.lastInsertRowid, 'create', null, { player_id: pid }, req.user.id);
   res.json({ ok: true, id: info.lastInsertRowid, username: full, pin });
 }));
+// Cuenta de entrenador: acceso de solo lectura al módulo del primer equipo
+r.post('/users/coach', A.requireAdmin, h((req, res) => {
+  const name = reqText(req.body.name, 'Nombre completo', 120);
+  if (db.prepare('SELECT 1 FROM users WHERE username_key=?').get(nameKey(name))) throw new HttpError(409, 'Ya existe un usuario con ese nombre.');
+  const pin = A.generatePin();
+  const info = db.prepare("INSERT INTO users(username_key,display_name,pin_hash,role,must_change_pin) VALUES (?,?,?,'coach',1)").run(nameKey(name), name, A.hashPin(pin));
+  audit('user', info.lastInsertRowid, 'create', null, { role: 'coach', name }, req.user.id);
+  res.json({ ok: true, id: info.lastInsertRowid, username: name, pin });
+}));
 r.post('/users/:id/reset-pin', A.requireAdmin, h((req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
-  if (!u || u.role !== 'player') throw notFound('Usuario no encontrado.');
+  if (!u || (u.role !== 'player' && u.role !== 'coach')) throw notFound('Usuario no encontrado.');
   const pin = A.generatePin();
   db.prepare('UPDATE users SET pin_hash=?, must_change_pin=1 WHERE id=?').run(A.hashPin(pin), u.id);
   db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id);
@@ -526,7 +542,7 @@ r.post('/users/:id/reset-pin', A.requireAdmin, h((req, res) => {
 }));
 r.patch('/users/:id', A.requireAdmin, h((req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
-  if (!u || u.role !== 'player') throw notFound('Usuario no encontrado.');
+  if (!u || (u.role !== 'player' && u.role !== 'coach')) throw notFound('Usuario no encontrado.');
   const active = req.body.active ? 1 : 0;
   db.prepare('UPDATE users SET active=? WHERE id=?').run(active, u.id);
   if (!active) db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id);
@@ -535,7 +551,7 @@ r.patch('/users/:id', A.requireAdmin, h((req, res) => {
 }));
 r.delete('/users/:id', A.requireAdmin, h((req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id);
-  if (!u || u.role !== 'player') throw notFound('Usuario no encontrado.');
+  if (!u || (u.role !== 'player' && u.role !== 'coach')) throw notFound('Usuario no encontrado.');
   db.prepare('DELETE FROM users WHERE id=?').run(u.id);
   audit('user', u.id, 'delete', { name: u.display_name }, null, req.user.id);
   res.json({ ok: true });

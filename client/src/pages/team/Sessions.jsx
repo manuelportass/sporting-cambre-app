@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api';
 import { ColorBadge, Confirm, Empty, ErrorBox, Field, ListRow, Loading, Modal, MoreMenu, PageHead, Tabs, useApi, useToast } from '../../components/ui';
+import { useReadOnly } from '../../App';
 import { LoadEntryModal } from './TeamPlayer';
 import { AVAIL_COLOR, addDays, fmtDate, fmtDateTime, fmtNum, mondayOf, todayISO } from '../../lib/format';
 
@@ -19,6 +20,7 @@ export default function Sessions() {
 
 function SessionsList() {
   const toast = useToast();
+  const ro = useReadOnly();
   const [from, setFrom] = useState(addDays(mondayOf(todayISO()), -7));
   const to = addDays(from, 13);
   const l = useApi(`/team/sessions?from=${from}&to=${to}`);
@@ -29,7 +31,7 @@ function SessionsList() {
   const [fill, setFill] = useState(false);
   return <div className="stack">
     <div className="row"><button className="btn sm" onClick={() => setFrom(addDays(from, -14))} aria-label="Anteriores">‹</button><b>{fmtDate(from, { day: 'numeric', month: 'short' })} – {fmtDate(to, { day: 'numeric', month: 'short' })}</b><button className="btn sm" onClick={() => setFrom(addDays(from, 14))} aria-label="Siguientes">›</button>
-      <span className="spacer" /><MoreMenu items={[{ label: 'Programar martes, jueves y viernes', onClick: () => setGen(true) }, { label: 'Importar histórico de RPE (formulario)', onClick: () => setHist(true) }, { label: 'Rellenar entrenamientos sin RPE', onClick: () => setFill(true) }]} /><button className="btn primary" onClick={() => setCreate(true)}>+ Sesión</button></div>
+      <span className="spacer" />{!ro && <MoreMenu items={[{ label: 'Programar martes, jueves y viernes', onClick: () => setGen(true) }, { label: 'Importar histórico de RPE (formulario)', onClick: () => setHist(true) }, { label: 'Rellenar entrenamientos sin RPE', onClick: () => setFill(true) }]} />}<button className="btn primary" onClick={() => setCreate(true)}>+ Sesión</button></div>
     {l.loading ? <Loading /> : !l.data.filter(s => s.session_type !== 'Partido').length ? <Empty title="No hay sesiones en estas dos semanas">Usa «⋯ → Programar martes, jueves y viernes».</Empty> :
       <div className="list">{l.data.filter(s => s.session_type !== 'Partido').map(s => <ListRow key={s.id} onClick={() => setOpen(s.id)} title={fmtDate(s.date, { weekday: 'long', day: 'numeric', month: 'short' })} sub={`${s.notes === 'Amistoso' ? 'Amistoso' : s.session_type} · ${s.rpe_count} registros`}
         right={s.rpe_count ? <span className="row small" style={{ gap: 14 }}>{s.avg_rpe != null && <span><span className="muted">RPE medio </span><b>{fmtNum(s.avg_rpe, 1)}</b></span>}<span><span className="muted">Carga media </span><b>{fmtNum(s.avg_load)} UA</b></span></span> : <span className="small muted">Sin registros</span>} />)}</div>}
@@ -126,11 +128,12 @@ function SessionDetail({ id, onClose }) {
   const [edit, setEdit] = useState(false);
   const [del, setDel] = useState(false);
   const [rpeFor, setRpeFor] = useState(null);
-  const set = async (pid, status) => { try { await api.post(`/team/sessions/${id}/attendance`, { player_id: pid, status }); r.reload(); } catch (e) { toast(e.message, 'err'); } };
+  const ro = useReadOnly();
+  const set = async (pid, status) => { if (ro) return; try { await api.post(`/team/sessions/${id}/attendance`, { player_id: pid, status }); r.reload(); } catch (e) { toast(e.message, 'err'); } };
   const all = async status => { try { await api.post(`/team/sessions/${id}/attendance`, { items: r.data.players.filter(p => !p.attendance).map(p => ({ player_id: p.player_id, status })) }); r.reload(); } catch (e) { toast(e.message, 'err'); } };
   const noRpeAbsent = async () => { const items = r.data.players.filter(p => !p.rpe && !p.attendance).map(p => ({ player_id: p.player_id, status: 'ausente' })); if (!items.length) return toast('No hay jugadores sin RPE ni asistencia'); try { await api.post(`/team/sessions/${id}/attendance`, { items }); toast(`${items.length} marcados ausentes`); r.reload(); } catch (e) { toast(e.message, 'err'); } };
   return <Modal wide title={r.data ? `${r.data.session.session_type} · ${fmtDate(r.data.session.date, { weekday: 'long', day: 'numeric', month: 'long' })}` : 'Sesión'} onClose={onClose}
-    footer={<><button className="btn danger" style={{ marginRight: 'auto' }} onClick={() => setDel(true)}>Eliminar sesión</button><button className="btn" onClick={() => setEdit(true)}>Editar</button><button className="btn primary" onClick={onClose}>Cerrar</button></>}>
+    footer={<>{!ro && <><button className="btn danger" style={{ marginRight: 'auto' }} onClick={() => setDel(true)}>Eliminar sesión</button><button className="btn" onClick={() => setEdit(true)}>Editar</button></>}<button className="btn primary" onClick={onClose}>Cerrar</button></>}>
     {!r.data ? <Loading /> : <>
       {r.data.session.rpe_count > 0 && <div className="row" style={{ gap: 18, marginBottom: 10 }}>
         {r.data.session.avg_rpe != null && <span><span className="muted">RPE medio </span><b>{fmtNum(r.data.session.avg_rpe, 1)}</b></span>}
@@ -139,15 +142,15 @@ function SessionDetail({ id, onClose }) {
         <span className="muted">({r.data.session.rpe_count} registros)</span></div>}
       {isTue && pm.data?.match && <div className="alert info small" style={{ marginBottom: 10 }}><span>ℹ</span><div>Martes post-partido (J{pm.data.match.matchday} vs {pm.data.match.opponent}): {pm.data.groups.map(g => `${g.players.length} ${g.focus.toLowerCase()}`).join(' · ')}.{pm.data.missingActa ? ` Falta el acta de la J${pm.data.missingActa.matchday}.` : ''}</div></div>}
       <div className="row" style={{ marginBottom: 10 }}><span className="small muted">P presente · A ausente · J justificada · L lesionado</span><span className="spacer" />
-        <MoreMenu items={[{ label: 'Sin marcar → presentes', onClick: () => all('presente') }, { label: 'Sin RPE → ausentes', onClick: noRpeAbsent }]} /></div>
+        {!ro && <MoreMenu items={[{ label: 'Sin marcar → presentes', onClick: () => all('presente') }, { label: 'Sin RPE → ausentes', onClick: noRpeAbsent }]} />}</div>
       {!r.data.players.length ? <Empty title="No hay jugadores en el primer equipo" /> : <div className="table-wrap"><table className="t">
         <thead><tr><th>Jugador</th><th>Asistencia</th><th>RPE</th></tr></thead>
         <tbody>{r.data.players.map(p => <tr key={p.player_id}><td><b>{p.name}</b>{pmBy.get(p.player_id) && <span className={'pmtag g-' + pmBy.get(p.player_id).g} title={`${pmBy.get(p.player_id).min}′ en el último partido`}>{pmBy.get(p.player_id).focus} · {pmBy.get(p.player_id).min}′</span>}</td>
-          <td><div className="statusbtns">{ATT.map(([k, l]) => <button key={k} data-s={k === 'lesionado' ? 'ausente' : k} className={p.attendance === k ? 'on' : ''} title={k} onClick={() => set(p.player_id, p.attendance === k ? null : k)}>{l}</button>)}</div></td>
+          <td><div className={'statusbtns' + (ro ? ' ro' : '')}>{ATT.map(([k, l]) => <button key={k} data-s={k === 'lesionado' ? 'ausente' : k} className={p.attendance === k ? 'on' : ''} title={k} onClick={() => set(p.player_id, p.attendance === k ? null : k)}>{l}</button>)}</div></td>
           <td>{p.rpe ? <span className="small"><b>{fmtNum(p.rpe.rpe)}</b> × {fmtNum(p.rpe.duration_min)}′ = {fmtNum(p.rpe.rpe * p.rpe.duration_min)} UA</span> :
             r.data.session.session_type === 'Partido' ? <span className="muted small">Sin minutos</span> :
             ['ausente', 'justificada', 'lesionado'].includes(p.attendance) ? <span className="muted small">No requerido</span> :
-            <span className="row small"><span style={{ color: '#8a5a00', fontWeight: 600 }}>Pendiente</span><button className="btn sm" onClick={() => setRpeFor(p)}>Registrar</button></span>}</td></tr>)}</tbody></table></div>}
+            <span className="row small"><span style={{ color: '#8a5a00', fontWeight: 600 }}>Pendiente</span>{!ro && <button className="btn sm" onClick={() => setRpeFor(p)}>Registrar</button>}</span>}</td></tr>)}</tbody></table></div>}
       {edit && <SessionForm session={r.data.session} onClose={() => setEdit(false)} onSaved={r.reload} />}
       {rpeFor && <LoadEntryModal playerId={rpeFor.player_id} preset={{ date: r.data.session.date, session_type: r.data.session.session_type, team_session_id: id, duration_min: r.data.session.planned_minutes || '' }} onClose={() => setRpeFor(null)} onSaved={() => { r.reload(); toast('RPE registrado'); }} />}
       {del && <Confirm title="Eliminar sesión" danger confirmText="Eliminar" message="Se eliminará la sesión y su asistencia. Los RPE enviados se conservan." onConfirm={async () => { await api.del('/team/sessions/' + id); onClose(); }} onClose={() => setDel(false)} />}
@@ -171,6 +174,7 @@ function DailyWellness() {
 
 function Corrections() {
   const toast = useToast();
+  const ro = useReadOnly();
   const [status, setStatus] = useState('pendiente');
   const l = useApi('/team/corrections?status=' + status);
   const resolve = async (c, approve) => { try { await api.post(`/team/corrections/${c.id}/resolve`, { approve }); toast(approve ? 'Corrección aplicada' : 'Solicitud rechazada'); l.reload(); } catch (e) { toast(e.message, 'err'); } };
@@ -182,7 +186,7 @@ function Corrections() {
       <div className="small"><b>Motivo:</b> {c.reason}</div>
       {c.original && <div className="small"><b>Original ({fmtDate(c.original.date)}):</b> {c.entity === 'load' ? `${c.original.session_type} · ${c.original.duration_min}′ × RPE ${c.original.rpe} = ${c.original.load_au} UA · «${c.original.notes}»` : fmt(c.original.scores || {})}</div>}
       <div className="small"><b>Propuesta:</b> {c.proposed.delete ? 'Eliminar el registro' : fmt(c.proposed)}</div>
-      {c.status === 'pendiente' && <div className="row"><button className="btn sm primary" onClick={() => resolve(c, true)}>Aprobar y aplicar</button><button className="btn sm" onClick={() => resolve(c, false)}>Rechazar</button></div>}
+      {c.status === 'pendiente' && !ro && <div className="row"><button className="btn sm primary" onClick={() => resolve(c, true)}>Aprobar y aplicar</button><button className="btn sm" onClick={() => resolve(c, false)}>Rechazar</button></div>}
     </div>)}
   </div>;
 }

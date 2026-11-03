@@ -39,6 +39,8 @@ function inkFor(hex) {
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
+// Cuenta de entrenador: solo consulta del primer equipo
+export const useReadOnly = () => useContext(AuthCtx)?.user?.role === 'coach';
 const ClubCtx = createContext(null);
 export const useClub = () => useContext(ClubCtx);
 
@@ -83,6 +85,24 @@ export default function App() {
           !state.user ? <Login onDone={refresh} /> :
           state.user.mustChangePin ? <ChangePin forced onDone={refresh} /> :
           state.user.role === 'player' ? <Routes><Route path="*" element={<PlayerApp />} /></Routes> :
+          state.user.role === 'coach' ? <Routes>
+            <Route element={<AdminLayout />}>
+              <Route index element={<Navigate to="/primer-equipo" replace />} />
+              <Route path="primer-equipo" element={<TeamHub />} />
+              <Route path="primer-equipo/jugadores" element={<TeamDashboard />} />
+              <Route path="primer-equipo/martes" element={<PostMatch />} />
+              <Route path="primer-equipo/jugador/:id" element={<TeamPlayer />} />
+              <Route path="primer-equipo/sesiones" element={<Sessions />} />
+              <Route path="primer-equipo/partidos" element={<Matches />} />
+              <Route path="primer-equipo/tests" element={<Tests />} />
+              <Route path="primer-equipo/multas" element={<Fines />} />
+              <Route path="primer-equipo/wellness" element={<TeamWellness />} />
+              <Route path="primer-equipo/rpe" element={<TeamRpe />} />
+              <Route path="primer-equipo/metodologia" element={<Methodology />} />
+              <Route path="mi-pin" element={<ChangePin />} />
+              <Route path="*" element={<Navigate to="/primer-equipo" replace />} />
+            </Route>
+          </Routes> :
           <Routes>
             <Route element={<AdminLayout />}>
               <Route index element={<Home />} />

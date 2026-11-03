@@ -7,6 +7,7 @@ const L = ({ to, children, end }) => <NavLink to={to} end={end}><span className=
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
+  const coach = user.role === 'coach';
   const club = useClub();
   const [open, setOpen] = useState(false);
   const loc = useLocation();
@@ -19,6 +20,13 @@ export default function AdminLayout() {
     <aside className={'side' + (open ? ' open' : '')}>
       <div className="brand"><Crest size={42} /><div><b>{club.name}</b><small>Preparación física</small></div></div>
       <nav className="nav stack" style={{ gap: 2 }}>
+        {coach ? <>
+          <L to="/primer-equipo" end>Primer equipo</L>
+          <L to="/primer-equipo/jugadores">Jugadores</L>
+          <L to="/primer-equipo/wellness">Wellness</L>
+          <L to="/primer-equipo/rpe">RPE</L>
+          <L to="/primer-equipo/partidos">Partidos</L>
+        </> : <>
         <L to="/" end>Inicio</L>
         <L to="/jugadores">Jugadores</L>
         <div className="nav-group">Módulos</div>
@@ -26,11 +34,11 @@ export default function AdminLayout() {
         <L to="/lesiones">Lesiones</L>
         <L to="/primer-equipo">Primer equipo</L>
         <div className="nav-group">Sistema</div>
-        <L to="/configuracion">Configuración</L>
+        <L to="/configuracion">Configuración</L></>}
       </nav>
       <div className="foot">
         <div style={{ fontWeight: 600 }}>{user.name}</div>
-        <div>Preparador físico · <NavLink to="/mi-pin" style={{ color: '#fff' }}>PIN</NavLink> · <button onClick={logout}>Salir</button></div>
+        <div>{coach ? 'Entrenador · solo consulta' : 'Preparador físico'} · <NavLink to="/mi-pin" style={{ color: '#fff' }}>PIN</NavLink> · <button onClick={logout}>Salir</button></div>
       </div>
     </aside>
     <main className="main"><Outlet /></main>

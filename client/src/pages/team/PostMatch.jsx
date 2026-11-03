@@ -1,3 +1,4 @@
+import { useReadOnly } from '../../App';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Empty, ErrorBox, Loading, PageHead, useApi } from '../../components/ui';
@@ -9,6 +10,7 @@ const STYLE = { alto: { c: '#2a78d6', bg: '#eaf2fc', ic: '↺' }, medio: { c: '#
 
 // Sesión del martes: grupos según los minutos del último partido con acta
 export default function PostMatch() {
+  const ro = useReadOnly();
   const nav = useNavigate();
   const r = useApi('/team/post-match?date=' + todayISO());
   if (r.loading) return <Loading />;
@@ -17,7 +19,7 @@ export default function PostMatch() {
   return <div style={{ maxWidth: 1100 }}>
     <PageHead back="/primer-equipo" title="Sesión post-partido" sub="Grupos para el entrenamiento del martes según los minutos jugados" actions={<button className="btn" onClick={() => window.print()}>Imprimir</button>} />
     {d.missingActa && <div className="alert warn" style={{ marginBottom: 14 }}><span>⚠</span><div style={{ flex: 1 }}>Falta el acta de la <b>jornada {d.missingActa.matchday}</b> ({fmtDate(d.missingActa.date)}, {d.missingActa.home_away === 'local' ? 'vs' : 'en'} {teamName(d.missingActa.opponent)}). {m ? <>Los grupos de abajo son del último partido con acta (J{m.matchday}).</> : null}</div>
-      <button className="btn sm primary" onClick={() => nav('/primer-equipo/partidos')}>Subir acta</button></div>}
+      {!ro && <button className="btn sm primary" onClick={() => nav('/primer-equipo/partidos')}>Subir acta</button>}</div>}
     {!m ? <Empty title="Aún no hay partidos con acta">Sube el acta en Partidos para ver los grupos.</Empty> : <>
       {(() => { const away = m.home_away === 'visitante';
         const us = <div className="pm-team"><Crest size={48} /><b>Sporting Cambre</b></div>;

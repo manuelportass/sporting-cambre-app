@@ -6,23 +6,25 @@ import { MultiLine } from '../../components/charts';
 import { exportCSV, exportXLSX } from '../../lib/files';
 import { fmtDate, fmtNum, todayISO } from '../../lib/format';
 import JumpLab from '../../components/JumpLab';
+import { useReadOnly } from '../../App';
 import SquatLab, { LV_TEST, RM_TEST } from '../../components/SquatLab';
 import { VO2_NOTE, isIFT, mergeVO2, vo2Detail, withVO2 } from '../../lib/vo2';
 
 export default function Tests() {
   const types = useApi('/team/test-types');
   const [typeId, setTypeId] = useState(null);
-  const [tab, setTab] = useState('registrar');
+  const ro = useReadOnly();
+  const [tab, setTab] = useState(ro ? 'historial' : 'registrar');
   useEffect(() => { if (types.data?.length && !types.data.find(t => t.id === typeId)) setTypeId((types.data.find(isIFT) || types.data[0]).id); }, [types.data, typeId]);
   const type = types.data?.find(t => t.id === typeId);
   return <div>
     <PageHead back="/primer-equipo" title="Tests físicos" actions={types.data && tab !== 'configurar' && <select value={typeId || ''} onChange={e => setTypeId(Number(e.target.value))} aria-label="Test" style={{ width: 'auto' }}>{types.data.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>} />
-    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'registrar', label: 'Registrar' }, { key: 'historial', label: 'Historial' }, { key: 'comparar', label: 'Evolución' }, { key: 'configurar', label: 'Configurar' }]} />
+    <Tabs value={tab} onChange={setTab} tabs={ro ? [{ key: 'historial', label: 'Historial' }, { key: 'comparar', label: 'Evolución' }] : [{ key: 'registrar', label: 'Registrar' }, { key: 'historial', label: 'Historial' }, { key: 'comparar', label: 'Evolución' }, { key: 'configurar', label: 'Configurar' }]} />
     {types.loading ? <Loading /> : <>
-      {tab === 'registrar' && type && <Register type={type} types={types.data} />}
+      {tab === 'registrar' && !ro && type && <Register type={type} types={types.data} />}
       {tab === 'historial' && type && <History type={type} />}
       {tab === 'comparar' && type && <Compare type={type} />}
-      {tab === 'configurar' && <Configure types={types.data} reload={types.reload} />}
+      {tab === 'configurar' && !ro && <Configure types={types.data} reload={types.reload} />}
     </>}
   </div>;
 }
@@ -85,6 +87,7 @@ function VO2Saved({ rows, onClose }) {
 }
 
 function History({ type: baseType }) {
+  const ro = useReadOnly();
   const type = withVO2(baseType);
   const toast = useToast();
   const l = useApi('/team/tests?type_id=' + type.id);
@@ -99,7 +102,7 @@ function History({ type: baseType }) {
       <div className="table-wrap"><table className="t"><thead><tr>{cols.map(c => <th key={c.key} className={c.align ? 'n' : ''}>{c.label}</th>)}<th /></tr></thead>
         <tbody>{rows.map(r => <tr key={r.id}><td>{fmtDate(r.date)}</td><td><b>{r.player_name}</b></td>{type.fields.map(f => <td key={f.key} className="n" title={f.virtual ? vo2Detail(r.vo2info) : undefined}>{f.virtual && r[f.key] == null ? <span className="muted" title={vo2Detail(r.vo2info)}>falta dato</span> : fmtNum(r[f.key], f.decimals)}</td>)}
           <td className="small">{r.device || '—'}</td><td className="small" style={{ maxWidth: 200 }}>{r.protocol || '—'}</td><td className="small">{r.conditions || '—'}</td><td className="small">{r.notes || ''}</td>
-          <td><div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><button className="btn sm ghost" onClick={() => setEdit(r)}>Editar</button><button className="btn sm ghost" onClick={() => setDel(r)}>×</button></div></td></tr>)}</tbody></table></div>}
+          <td>{!ro && <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}><button className="btn sm ghost" onClick={() => setEdit(r)}>Editar</button><button className="btn sm ghost" onClick={() => setDel(r)}>×</button></div>}</td></tr>)}</tbody></table></div>}
     {edit && <EditResult r={edit} type={baseType} onClose={() => setEdit(null)} onSaved={() => { l.reload(); toast('Resultado actualizado'); }} />}
     {del && <Confirm title="Eliminar resultado" danger confirmText="Eliminar" message={`¿Eliminar el resultado de ${del.player_name} del ${fmtDate(del.date)}?`} onConfirm={async () => { await api.del('/team/tests/' + del.id); l.reload(); }} onClose={() => setDel(null)} />}
   </div>;

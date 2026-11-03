@@ -88,6 +88,20 @@ function requireAdmin(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Acceso restringido al preparador físico.' });
   next();
 }
+// Preparador o entrenador (el entrenador solo puede consultar)
+function requireStaff(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Sesión no iniciada.' });
+  if (req.user.role !== 'admin' && req.user.role !== 'coach') return res.status(403).json({ error: 'Acceso restringido.' });
+  next();
+}
+// Primer equipo: el preparador puede todo; el entrenador, solo consultar (GET)
+function requireTeamRead(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Sesión no iniciada.' });
+  if (req.user.role === 'admin') return next();
+  if (req.user.role === 'coach' && req.method === 'GET') return next();
+  if (req.user.role === 'coach') return res.status(403).json({ error: 'La cuenta de entrenador es de solo lectura.' });
+  return res.status(403).json({ error: 'Acceso restringido al preparador físico.' });
+}
 function requirePlayer(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Sesión no iniciada.' });
   if (req.user.role !== 'player' || !req.user.player_id) return res.status(403).json({ error: 'Solo para jugadores.' });
@@ -97,7 +111,7 @@ function requirePlayer(req, res, next) {
 function purgeSessions() { db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOString()); }
 
 module.exports = {
-  login, logout, loadUser, requireAuth, requireAdmin, requirePlayer, createSession, publicUser,
+  login, logout, loadUser, requireAuth, requireAdmin, requireStaff, requireTeamRead, requirePlayer, createSession, publicUser,
   hashPin, validPin, generatePin, ensureSetupCode, needsSetup, purgeSessions, COOKIE,
   getSetupCode: () => setupCode,
 };

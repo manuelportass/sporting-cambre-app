@@ -879,3 +879,11 @@ i.dash { display: inline-block; width: 14px; border-top: 2px dashed #111511; ver
 .ck-rbar i { display: block; height: 100%; border-radius: 9px; }
 .ck-rv { font: 700 18px var(--head); text-align: right; }
 .ck-rd { text-align: right; }
+
+/* ---------- Cuenta de entrenador (solo consulta) ---------- */
+fieldset.ro-fs { border: 0; margin: 0; padding: 0; min-width: 0; }
+fieldset.card.ro-fs { padding: 16px; border: 1px solid var(--line); }
+fieldset.ro-fs:disabled input, fieldset.ro-fs:disabled select, fieldset.ro-fs:disabled textarea { background: #f6f6f3; color: var(--ink); opacity: 1; }
+fieldset.ro-fs:disabled button { cursor: default; }
+.statusbtns.ro button { pointer-events: none; }
+.statusbtns.ro button:not(.on) { opacity: .35; }

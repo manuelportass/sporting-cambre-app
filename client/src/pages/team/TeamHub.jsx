@@ -1,11 +1,13 @@
 import React from 'react';
 import { Loading, PageHead, Tile, useApi } from '../../components/ui';
+import { useReadOnly } from '../../App';
 import { addDays, fmtDate, todayISO } from '../../lib/format';
 
 // Portada del primer equipo: un acceso por apartado
 export default function TeamHub() {
   const d = useApi('/team/dashboard');
-  const users = useApi('/users');
+  const ro = useReadOnly();
+  const users = useApi(ro ? null : '/users');
   const fines = useApi('/team/fines');
   const today0 = todayISO();
   const wToday = useApi(`/team/wellness?from=${today0}&to=${today0}`);
@@ -24,7 +26,7 @@ export default function TeamHub() {
   const corrections = x?.alerts.find(a => /corrección/.test(a.text));
   const accounts = (users.data || []).filter(u => u.role === 'player' && u.active).length;
   return <div>
-    <PageHead title="Primer equipo" sub={x ? `Temporada ${x.season}` : null} />
+    <PageHead title="Primer equipo" sub={x ? `Temporada ${x.season}${ro ? ' · solo consulta' : ''}` : null} />
     <div className="tiles">
       <Tile to="/primer-equipo/jugadores" title="Jugadores" value={x?.rows.length ?? '—'}
         hint={[pending ? `${pending} RPE pendientes` : 'Sin RPE pendientes', unavailable ? `${unavailable} no disponibles` : null].filter(Boolean).join(' · ')} color={pending ? 'naranja' : undefined} />
@@ -35,10 +37,10 @@ export default function TeamHub() {
       <Tile to="/primer-equipo/sesiones" title="Sesiones" value={nextSession ? fmtDate(nextSession.date, { weekday: 'short', day: 'numeric' }) : '—'}
         hint={corrections ? 'Hay correcciones por revisar' : nextSession ? `Próxima: ${nextSession.session_type}` : 'Programa los entrenamientos'} />
       <Tile to="/primer-equipo/partidos" title="Partidos" value={rec ? `${rec.V}/${rec.E}/${rec.D}` : '—'} hint={rec ? `ganados / empatados / perdidos (${rec.n} partido${rec.n === 1 ? '' : 's'})` : 'Resultados y estadísticas'} />
-      <Tile to="/primer-equipo/tests" title="Tests físicos" hint="Registrar y comparar" />
+      <Tile to="/primer-equipo/tests" title="Tests físicos" hint={ro ? "Resultados y evolución" : "Registrar y comparar"} />
       <Tile to="/primer-equipo/multas" title="Multas" value={fines.data ? `${finePend.reduce((a, f) => a + f.amount, 0).toLocaleString('es-ES')} €` : '—'}
         hint={fines.data ? (finePend.length ? `${finePend.length} pendiente${finePend.length === 1 ? '' : 's'} de pago · RPE fuera de plazo` : 'Sin multas pendientes · RPE fuera de plazo') : 'RPE fuera de plazo'} color={finePend.length ? 'naranja' : undefined} />
-      <Tile to="/primer-equipo/cuentas" title="Cuentas" value={accounts} hint="jugadores con acceso a la app" />
+      {!ro && <Tile to="/primer-equipo/cuentas" title="Cuentas" value={accounts} hint="jugadores con acceso a la app" />}
       <Tile to="/primer-equipo/metodologia" title="Cómo se calcula" hint="Fórmulas y colores" />
     </div>
   </div>;
