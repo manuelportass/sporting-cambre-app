@@ -7,7 +7,10 @@ import { WEEKDAYS, fmtDate } from '../../lib/format';
 
 const ST = { pendiente: ['Pendiente', 'var(--rojo)'], pagada: ['Pagada', 'var(--verde)'], anulada: ['Anulada', 'var(--gris, #9a9b95)'] };
 const eur = n => `${(Math.round(n * 100) / 100).toLocaleString('es-ES', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })} €`;
-const minus1h = t => { const [h, m] = t.split(':').map(Number); return `${String((h + 23) % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+// Hora resultante de sumar h horas a «HH:MM» y en qué día cae (0 = mismo día, 1 = día siguiente…)
+const plusH = (t, h) => { const [a, b] = t.split(':').map(Number), tot = a * 60 + b + Math.round(h * 60); return { time: `${String(Math.floor(tot / 60) % 24).padStart(2, '0')}:${String(tot % 60).padStart(2, '0')}`, day: Math.floor(tot / 1440) }; };
+const dayTxt = d => (d === 0 ? 'El mismo día' : d === 1 ? 'Al día siguiente' : `${d} días después`);
+const hTxt = h => `${String(h).replace('.', ',')} h`;
 
 // Multas del primer equipo: RPE no registrado en las 24 h siguientes al aviso
 export default function Fines() {
@@ -47,10 +50,10 @@ export default function Fines() {
     <div className="card fine-rule">
       <div className="fr-steps">
         <div><b>{c.rpeTime} h</b><span>Aviso de RPE</span><small>Días de entrenamiento ({days})</small></div>
+        {c.reminder !== false && <><i>→</i>
+        <div><b>{plusH(c.rpeTime, c.reminderHours).time} h</b><span>{dayTxt(plusH(c.rpeTime, c.reminderHours).day)} · +{hTxt(c.reminderHours)}</span><small>«Te queda{c.fineHours - c.reminderHours === 1 ? ' 1 hora' : `n ${hTxt(c.fineHours - c.reminderHours)}`} para el RPE»</small></div></>}
         <i>→</i>
-        <div><b>{minus1h(c.rpeTime)} h</b><span>Al día siguiente</span><small>«Te queda 1 hora para el RPE»</small></div>
-        <i>→</i>
-        <div className="fr-fine"><b>{c.rpeTime} h</b><span>24 h después</span><small>Sin RPE: multa de {eur(c.amount)}</small></div>
+        <div className="fr-fine"><b>{plusH(c.rpeTime, c.fineHours).time} h</b><span>{dayTxt(plusH(c.rpeTime, c.fineHours).day)} · +{hTxt(c.fineHours)}</span><small>Sin RPE: multa de {eur(c.amount)}</small></div>
       </div>
       <p className="small muted" style={{ margin: 0 }}>Solo cuenta el RPE (el wellness no genera multas). Se aplica a jugadores del primer equipo con cuenta en la app; no se multa a quien tenga una lesión abierta ni a quien esté marcado como ausente, justificado o lesionado en ese entrenamiento. Las multas se acumulan y puedes anularlas o marcarlas como pagadas.</p>
       {!c.notificationsEnabled && <div className="alert warn small"><span>⚠</span><div>Los avisos automáticos están desactivados (Configuración → Avisos): las multas se siguen generando, pero los jugadores no reciben los recordatorios.</div></div>}
@@ -83,7 +86,7 @@ export default function Fines() {
     </div>}
 
     {act && <FineAction {...act} onClose={() => setAct(null)} onDone={() => { d.reload(); toast(act.status === 'pagada' ? 'Multa marcada como pagada' : act.status === 'anulada' ? 'Multa anulada' : 'Multa reabierta'); }} />}
-    {cfg && s.data && <FineCfg v0={s.data.fines} onClose={() => setCfg(false)} onSaved={() => { s.reload(); d.reload(); }} />}
+    {cfg && s.data && <FineCfg v0={s.data.fines} rpeTime={c.rpeTime} onClose={() => setCfg(false)} onSaved={() => { s.reload(); d.reload(); }} />}
   </div>;
 }
 
@@ -100,20 +103,26 @@ function FineAction({ f, status, onClose, onDone }) {
   </Modal>;
 }
 
-function FineCfg({ v0, onClose, onSaved }) {
+function FineCfg({ v0, rpeTime, onClose, onSaved }) {
   const toast = useToast();
-  const [v, setV] = useState({ enabled: true, reminder: true, amount: 2, startDate: '', ...v0 });
+  const [v, setV] = useState({ enabled: true, reminder: true, amount: 2, startDate: '', reminderHours: 23, fineHours: 24, ...v0 });
   const [err, setErr] = useState(null);
   return <Modal title="Ajustes de multas" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={async () => {
-    try { await api.put('/settings/fines', { value: { ...v, amount: Number(v.amount) } }); toast('Ajustes guardados'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
+    try { await api.put('/settings/fines', { value: { ...v, amount: Number(v.amount), reminderHours: Number(String(v.reminderHours).replace(',', '.')), fineHours: Number(String(v.fineHours).replace(',', '.')) } }); toast('Ajustes guardados'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
   }}>Guardar</button></>}>
     <div className="stack">
       <label className="check"><input type="checkbox" checked={v.enabled} onChange={e => setV({ ...v, enabled: e.target.checked })} /> Generar multas por RPE no registrado</label>
-      <label className="check"><input type="checkbox" checked={v.reminder} onChange={e => setV({ ...v, reminder: e.target.checked })} /> Enviar el aviso «te queda 1 hora» (23 h después del aviso de RPE)</label>
+      <label className="check"><input type="checkbox" checked={v.reminder} onChange={e => setV({ ...v, reminder: e.target.checked })} /> Enviar un último aviso antes de la multa</label>
       <div className="inline-fields">
         <Field label="En vigor desde"><input type="date" value={v.startDate} onChange={e => setV({ ...v, startDate: e.target.value })} /></Field>
         <Field label="Importe por multa (€)"><input type="number" min="0" step="0.5" value={v.amount} onChange={e => setV({ ...v, amount: e.target.value })} /></Field>
       </div>
+      <div className="inline-fields">
+        <Field label="Último aviso" hint="horas después del aviso de RPE"><input type="number" min="0.5" max="168" step="0.5" value={v.reminderHours} disabled={!v.reminder} onChange={e => setV({ ...v, reminderHours: e.target.value })} /></Field>
+        <Field label="Multa" hint="horas después del aviso de RPE"><input type="number" min="1" max="168" step="0.5" value={v.fineHours} onChange={e => setV({ ...v, fineHours: e.target.value })} /></Field>
+      </div>
+      {(() => { const rh = Number(String(v.reminderHours).replace(',', '.')), fh = Number(String(v.fineHours).replace(',', '.')); const t = rpeTime || '22:00';
+        return fh > 0 && <p className="small" style={{ margin: 0 }}>Con el aviso de RPE a las <b>{t}</b>: {v.reminder && rh > 0 && rh < fh ? <>último aviso a las <b>{plusH(t, rh).time}</b> ({dayTxt(plusH(t, rh).day).toLowerCase()}) y </> : null}multa a las <b>{plusH(t, fh).time}</b> ({dayTxt(plusH(t, fh).day).toLowerCase()}) si sigue sin RPE.{v.reminder && rh >= fh ? <span style={{ color: 'var(--rojo)' }}> El último aviso tiene que ser antes que la multa.</span> : null}</p>; })()}
       <p className="small muted" style={{ margin: 0 }}>La hora del aviso de RPE se cambia en Configuración → Avisos. Los cambios de importe solo afectan a las multas nuevas.</p>
       <ErrorBox error={err} />
     </div>

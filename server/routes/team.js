@@ -195,7 +195,7 @@ r.get('/rpe-overview', h((req, res) => {
   const from = reqDate(req.query.from), to = reqDate(req.query.to) > today() ? today() : reqDate(req.query.to);
   const st = settings();
   const days = new Set();
-  db.prepare("SELECT date FROM team_sessions WHERE session_type!='Partido' AND date BETWEEN ? AND ?").all(from, to).forEach(x => days.add(x.date));
+  db.prepare("SELECT date FROM team_sessions WHERE session_type!='Partido' AND date BETWEEN ? AND ? AND date NOT IN (SELECT date FROM matches)").all(from, to).forEach(x => days.add(x.date));
   db.prepare("SELECT DISTINCT date FROM load_entries WHERE kind='colectivo' AND status='valido' AND date BETWEEN ? AND ?").all(from, to).forEach(x => days.add(x.date));
   for (let d = from; d <= to; d = L.addDays(d, 1)) if (st.collectiveDays.includes(isoWeekday(d)) && !db.prepare("SELECT 1 FROM team_sessions WHERE date=? AND session_type='Partido'").get(d)) days.add(d);
   const players = T.seniorPlayers();
@@ -204,7 +204,7 @@ r.get('/rpe-overview', h((req, res) => {
     const entries = [], missing = [];
     for (const p of players) {
       const e = db.prepare("SELECT * FROM load_entries WHERE player_id=? AND date=? AND kind='colectivo' AND status='valido' ORDER BY id DESC LIMIT 1").get(p.id, date);
-      if (e) entries.push({ player_id: p.id, name: fullName(p), photo_file_id: p.photo_file_id, rpe: e.rpe, duration: e.duration_min, load: e.load_au, fill: e.notes === 'Relleno automático' });
+      if (e) entries.push({ player_id: p.id, name: fullName(p), photo_file_id: p.photo_file_id, rpe: e.rpe, duration: e.duration_min, load: e.load_au, fill: e.notes === 'Relleno automático', notes: e.notes === 'Relleno automático' ? null : e.notes }); 
       else {
         const att = ses && db.prepare('SELECT status FROM team_attendance WHERE session_id=? AND player_id=?').get(ses.id, p.id)?.status;
         const av = T.availability(p, date);
@@ -852,7 +852,7 @@ r.get('/fines', h((req, res) => {
   const s = settings();
   const list = db.prepare(`SELECT f.*, p.first_name, p.last_name, p.photo_file_id FROM fines f JOIN players p ON p.id=f.player_id ORDER BY f.date DESC, p.last_name`).all()
     .map(f => ({ ...f, player_name: fullName(f) }));
-  res.json({ config: { ...s.fines, rpeTime: s.notifications?.rpe?.time || '22:00', notificationsEnabled: !!s.notifications?.enabled }, list });
+  res.json({ config: { ...F.cfg(s), notificationsEnabled: !!s.notifications?.enabled }, list });
 }));
 r.put('/fines/:id', h((req, res) => {
   const f = db.prepare('SELECT * FROM fines WHERE id=?').get(req.params.id);

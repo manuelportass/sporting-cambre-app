@@ -26,10 +26,18 @@ function madridToDate(date, time) {
 const sqlUtc = d => d.toISOString().slice(0, 19).replace('T', ' '); // formato de datetime('now')
 const addDays = (date, n) => new Date(Date.parse(date + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 
-function cfg(s = settings()) { return { ...s.fines, rpeTime: s.notifications?.rpe?.time || '22:00' }; }
+// Horas (desde el aviso de RPE) hasta el último aviso y hasta la multa. Configurables en Multas → Ajustes.
+function cfg(s = settings()) {
+  const f = s.fines || {};
+  const fineHours = Number(f.fineHours) > 0 ? Number(f.fineHours) : 24;
+  let reminderHours = Number(f.reminderHours) > 0 ? Number(f.reminderHours) : fineHours - 1;
+  if (reminderHours >= fineHours) reminderHours = Math.max(0.5, fineHours - 1);
+  return { ...f, fineHours, reminderHours, rpeTime: s.notifications?.rpe?.time || '22:00' };
+}
 
 // Día de entrenamiento: hay sesión programada (no partido) o es día colectivo habitual sin partido ese día
 function isTrainingDay(date, s = settings()) {
+  if (db.prepare('SELECT 1 FROM matches WHERE date=?').get(date)) return false; // día de partido
   if (db.prepare("SELECT 1 FROM team_sessions WHERE date=? AND session_type!='Partido'").get(date)) return true;
   if (db.prepare("SELECT 1 FROM team_sessions WHERE date=? AND session_type='Partido'").get(date)) return false;
   return (s.collectiveDays || []).includes(isoWeekday(date));
@@ -56,14 +64,14 @@ function settle(now = new Date()) {
   let created = 0;
   for (let d = c.startDate; d <= today; d = addDays(d, 1)) {
     if (!isTrainingDay(d, s)) continue;
-    const notice = madridToDate(d, c.rpeTime), deadline = new Date(notice.getTime() + 24 * HOUR);
+    const notice = madridToDate(d, c.rpeTime), deadline = new Date(notice.getTime() + c.fineHours * HOUR);
     if (now < deadline) continue;
     for (const pl of eligible(d, notice)) {
       if (db.prepare("SELECT 1 FROM fines WHERE player_id=? AND date=? AND kind='rpe'").get(pl.player_id, d)) continue;
       const at = firstRpe(pl.player_id, d);
       if (at && at <= sqlUtc(deadline)) continue;
       const id = db.prepare("INSERT INTO fines(player_id,date,kind,reason,amount,deadline) VALUES (?,?,'rpe',?,?,?)")
-        .run(pl.player_id, d, 'RPE no registrado en las 24 h siguientes al aviso', Number(c.amount) || 2, sqlUtc(deadline)).lastInsertRowid;
+        .run(pl.player_id, d, `RPE no registrado en las ${String(c.fineHours).replace('.', ',')} h siguientes al aviso`, Number(c.amount) || 2, sqlUtc(deadline)).lastInsertRowid;
       audit('fine', id, 'auto_create', null, { player_id: pl.player_id, date: d }, null);
       created++;
     }
@@ -77,15 +85,18 @@ function reminderTargets(date) {
   return eligible(date, notice).filter(pl => !firstRpe(pl.player_id, date)
     && db.prepare('SELECT 1 FROM push_subscriptions WHERE user_id=?').get(pl.user_id));
 }
-// ¿Toca enviar ahora el recordatorio de multa? Devuelve la fecha del entrenamiento (ayer) o null.
+// ¿Toca enviar ahora el último aviso antes de la multa? Devuelve la fecha del entrenamiento o null.
 function reminderDue(now = new Date()) {
   const s = settings(), c = cfg(s);
   if (!c.enabled || c.reminder === false) return null;
   const m = madridParts(now);
-  const date = addDays(m.date, -1);
-  if (date < c.startDate || !isTrainingDay(date, s)) return null;
-  const at = new Date(madridToDate(date, c.rpeTime).getTime() + 23 * HOUR);
-  return madridParts(at).date === m.date && madridParts(at).time === m.time ? date : null;
+  for (let k = 0; k <= Math.ceil(c.reminderHours / 24) + 1; k++) {
+    const date = addDays(m.date, -k);
+    if (date < c.startDate || !isTrainingDay(date, s)) continue;
+    const at = madridParts(new Date(madridToDate(date, c.rpeTime).getTime() + c.reminderHours * HOUR));
+    if (at.date === m.date && at.time === m.time) return date;
+  }
+  return null;
 }
 
-module.exports = { settle, reminderTargets, reminderDue, isTrainingDay, madridParts, madridToDate };
+module.exports = { cfg, settle, reminderTargets, reminderDue, isTrainingDay, madridParts, madridToDate };

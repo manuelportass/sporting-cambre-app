@@ -54,6 +54,7 @@ export function TeamWellness() {
             <span className="ck-who"><Avatar name={p.full_name} fileId={p.photo_file_id} /><span>{p.full_name}</span></span>
             <b className="ck-tot" style={{ background: PCT(e.summary.total) }}>{e.summary.total ?? '—'}</b>
             {items.map(it => { const x = e.summary.items.find(i => i.key === it.key); return <span key={it.key} className="ck-cell" title={`${it.label}: ${x?.value ?? '—'}${x?.value != null ? ` (${it.anchors?.[x.value - (st.data.wellness.min || 1)] || ''})` : ''}`} style={{ background: PCT(x?.pct) }}>{x?.value ?? ''}</span>; })}
+            {e.notes && <span className="ck-note">💬 {e.notes}</span>}
           </div>)}
         </div>}
       {missing.length > 0 && <div className="ck-miss"><span className="small"><b>Sin responder ({missing.length}):</b></span> {missing.map(({ p }) => <span key={p.id} className="tag">{p.full_name}</span>)}</div>}
@@ -97,7 +98,8 @@ export function TeamRpe() {
             <span className="ck-who"><Avatar name={e.name} fileId={e.photo_file_id} /><span>{e.name}{e.fill && <small className="muted"> · relleno</small>}</span></span>
             <span className="ck-rbar"><i style={{ width: e.rpe * 10 + '%', background: RPE_HEX(e.rpe) }} /></span>
             <b className="ck-rv" style={{ color: RPE_HEX(e.rpe) }}>{fmtNum(e.rpe, 0)}</b>
-            <span className="small muted ck-rd">{fmtNum(e.duration, 0)}′ · {fmtNum(e.load, 0)} UA</span></div>)}</div>}
+            <span className="small muted ck-rd">{fmtNum(e.duration, 0)}′ · {fmtNum(e.load, 0)} UA</span>
+            {e.notes && <span className="ck-note">💬 {e.notes}</span>}</div>)}</div>}
           {cur.missing.length > 0 && <div className="ck-miss"><span className="small"><b>Sin RPE ({cur.missing.length}):</b></span> {cur.missing.map(m => <span key={m.player_id} className={'tag' + (m.reason ? '' : ' warn')}>{m.name}{m.reason ? ` · ${m.reason}` : ''}</span>)}</div>}
         </div>
       </div>

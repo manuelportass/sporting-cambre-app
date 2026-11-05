@@ -451,7 +451,7 @@ const DEFAULT_SETTINGS = {
   // Recordatorios al móvil (notificaciones push). Hora de Madrid; solo a quien no lo ha registrado.
   notifications: { enabled: true, wellness: { enabled: true, time: '17:00' }, rpe: { enabled: true, time: '22:00' }, eva: { enabled: true, time: '22:00' } },
   // Multas por no registrar el RPE en las 24 h siguientes al aviso (desde la fecha de inicio)
-  fines: { enabled: true, startDate: '2026-11-02', amount: 2, reminder: true },
+  fines: { enabled: true, startDate: '2026-11-02', amount: 2, reminder: true, reminderHours: 23, fineHours: 24 },
   sessionTypes: ['Entrenamiento', 'Recuperación', 'Activación'],
   extraTypes: ['Fuerza / gimnasio', 'Carrera continua', 'Intervalos', 'Fisioterapia / readaptación', 'Movilidad', 'Otro deporte', 'Otro'],
 };

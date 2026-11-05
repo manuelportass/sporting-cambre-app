@@ -96,15 +96,19 @@ function Indicator({ title, ind, digits = 0, extra }) {
   </div>;
 }
 
+const SEASON_START = '2026-07-27'; // primer día de la temporada
+
 function LoadTab({ id }) {
   const [range, setRange] = useState(56);
   const to = todayISO();
-  const r = useApi(`/team/players/${id}/load?from=${addDays(to, -range + 1)}&to=${to}`);
+  // «Temporada»: desde el primer día de la temporada 2026/27 (27/07/2026)
+  const from = range === 'season' ? SEASON_START : addDays(to, -range + 1);
+  const r = useApi(`/team/players/${id}/load?from=${from}&to=${to}`);
   if (r.loading && !r.data) return <Loading />;
   if (r.error) return <ErrorBox error={r.error} />;
   const { series, indicators: ind, settings } = r.data;
   return <div className="stack" style={{ gap: 14 }}>
-    <div className="row between"><span /><Seg value={range} onChange={setRange} options={[{ value: 28, label: '4 sem.' }, { value: 56, label: '8 sem.' }, { value: 112, label: '16 sem.' }, { value: 280, label: 'Temporada' }]} /></div>
+    <div className="row between"><span /><Seg value={range} onChange={setRange} options={[{ value: 28, label: '4 sem.' }, { value: 56, label: '8 sem.' }, { value: 112, label: '16 sem.' }, { value: 'season', label: 'Temporada' }]} /></div>
     <div className="grid g3">
       <Indicator title="Carga aguda" ind={ind.acute} extra={ind.acute.change !== null ? ` · variación ${ind.acute.change > 0 ? '+' : ''}${fmtNum(ind.acute.change, 1)} %` : ''} />
       <Indicator title="Carga crónica" ind={ind.chronic} />

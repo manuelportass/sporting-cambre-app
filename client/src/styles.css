@@ -887,3 +887,4 @@ fieldset.ro-fs:disabled input, fieldset.ro-fs:disabled select, fieldset.ro-fs:di
 fieldset.ro-fs:disabled button { cursor: default; }
 .statusbtns.ro button { pointer-events: none; }
 .statusbtns.ro button:not(.on) { opacity: .35; }
+.ck-note { grid-column: 1 / -1; font-size: 13px; color: var(--ink-2, #333); background: #f6f6f3; border-radius: 8px; padding: 5px 10px; margin: 2px 0 2px 44px; white-space: pre-wrap; }

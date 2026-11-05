@@ -83,13 +83,16 @@ async function tick(now = madridNow()) {
   if (!n?.enabled) return [];
   const training = F.isTrainingDay(now.date, s);
   const out = [];
-  // Último aviso antes de la multa: 23 h después del aviso de RPE del día de entrenamiento
+  // Último aviso antes de la multa: N horas después del aviso de RPE (Multas → Ajustes)
   try {
     const fd = F.reminderDue();
     if (fd && !db.prepare("SELECT 1 FROM push_log WHERE kind='multa' AND date=? AND user_id IS NULL").get(fd)) {
       const amount = String(s.fines?.amount ?? 2).replace('.', ',');
       let sent = 0, users = 0;
-      for (const u of F.reminderTargets(fd)) { users++; sent += await sendToUser(u.user_id, { ...MSG.multa, body: MSG.multa.body.replace('2 €', amount + ' €'), tag: `multa-${fd}` }); }
+      const fc = F.cfg(s), left = fc.fineHours - fc.reminderHours, leftTxt = left === 1 ? '1 hora' : `${String(left).replace('.', ',')} horas`;
+      const dayTxt = fd === now.date ? 'de hoy' : fd === F.madridParts(new Date(Date.now() - 864e5)).date ? 'de ayer' : `del ${fd.slice(8)}/${fd.slice(5, 7)}`;
+      const msg = { title: `Te queda${left === 1 ? '' : 'n'} ${leftTxt} para el RPE`, body: `Registra el RPE del entrenamiento ${dayTxt} en ${left === 1 ? 'la próxima hora' : 'las próximas ' + leftTxt} o tendrás una multa de ${amount} €.`, url: MSG.multa.url };
+      for (const u of F.reminderTargets(fd)) { users++; sent += await sendToUser(u.user_id, { ...msg, tag: `multa-${fd}` }); }
       db.prepare("INSERT INTO push_log(kind,date,user_id,sent) VALUES ('multa',?,NULL,?)").run(fd, sent);
       out.push({ kind: 'multa', users, sent });
     }

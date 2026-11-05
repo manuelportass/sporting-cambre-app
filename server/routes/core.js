@@ -112,6 +112,9 @@ function validateSetting(key, v) {
   if (key === 'fines') {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v.startDate || '')) throw bad('Fecha de inicio no válida.');
     num(v.amount, 'Importe', { min: 0, max: 1000, required: true });
+    const fh = num(v.fineHours ?? 24, 'Horas hasta la multa', { min: 1, max: 168, required: true });
+    const rh = num(v.reminderHours ?? 23, 'Horas hasta el último aviso', { min: 0.5, max: 168, required: true });
+    if (rh >= fh) throw bad('El último aviso tiene que llegar antes de la multa.');
   }
   if (key === 'collectiveDays' && (!Array.isArray(v) || v.some(d => !Number.isInteger(d) || d < 1 || d > 7))) throw bad('Días no válidos.');
 }

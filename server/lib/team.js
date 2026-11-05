@@ -28,6 +28,9 @@ function missingDates(playerId, from, to) {
   const out = [];
   for (const s of sessions) {
     if (s.session_type === 'Partido') continue; // los partidos se calculan con los minutos del acta
+    // Día de partido: aunque haya otra sesión creada ese día, no se reclama RPE de entrenamiento
+    // (si no, el día quedaba como «registro pendiente» y la carga del partido no contaba en las gráficas)
+    if (db.prepare('SELECT 1 FROM matches WHERE date=?').get(s.date)) continue;
     if (s.track_missing === 0) continue;         // sesiones del histórico importado: la asistencia no consta
     if (p?.joined_at && s.date < p.joined_at) continue;
     if (['ausente', 'justificada', 'lesionado'].includes(s.att)) continue;
