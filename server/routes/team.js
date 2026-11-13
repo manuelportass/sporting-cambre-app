@@ -219,6 +219,25 @@ r.get('/rpe-overview', h((req, res) => {
   res.json(out);
 }));
 
+// Carga del equipo: media diaria de la carga aguda, la crónica y el ACWR de los jugadores del primer equipo
+// (solo jugadores con el valor calculable ese día; nunca se rellenan huecos)
+r.get('/load-team', h((req, res) => {
+  const to = reqDate(req.query.to), from = reqDate(req.query.from);
+  if (L.diffDays(from, to) > 400 || to < from) throw bad('Rango no válido.');
+  const st = settings();
+  const all = T.seniorPlayers().map(p => T.playerSeries(p.id, from, to));
+  const unit = all.find(x => x.length)?.[0]?.unit;
+  const avg = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const series = (all[0] || []).map((d0, i) => {
+    const day = all.map(ser => ser[i]).filter(Boolean);
+    const ac = day.map(x => x.acute).filter(v => v != null), ch = day.map(x => x.chronic).filter(v => v != null), aw = day.map(x => x.acwr).filter(v => v != null);
+    const acwr = avg(aw);
+    return { date: d0.date, acute: ac.length ? Math.round(avg(ac)) : null, chronic: ch.length ? Math.round(avg(ch)) : null,
+      acwr: acwr == null ? null : Math.round(acwr * 100) / 100, acwrColor: L.acwrColor(acwr, st.acwrBands), n: aw.length, players: day.length };
+  });
+  res.json({ series, unit, bands: st.acwrBands, players: all.length });
+}));
+
 // ================= Solicitudes de corrección de jugadores =================
 r.get('/corrections', h((req, res) => {
   const rows = db.prepare(`SELECT c.*, p.first_name, p.last_name FROM correction_requests c JOIN players p ON p.id=c.player_id

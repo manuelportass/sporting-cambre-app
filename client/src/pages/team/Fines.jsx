@@ -5,6 +5,10 @@ import { exportXLSX } from '../../lib/files';
 import { useReadOnly } from '../../App';
 import { WEEKDAYS, fmtDate } from '../../lib/format';
 
+// Tipo de incumplimiento
+const TY = { no_completado: ['RPE no completado', '#d6262f'], fuera_plazo: ['RPE fuera de plazo', '#ef7d32'] };
+const tyOf = f => (f.subtype === 'fuera_plazo' ? 'fuera_plazo' : 'no_completado');
+const fmtAt = s => { if (!s) return ''; const d = new Date(s.replace(' ', 'T') + 'Z'); return d.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
 const ST = { pendiente: ['Pendiente', 'var(--rojo)'], pagada: ['Pagada', 'var(--verde)'], anulada: ['Anulada', 'var(--gris, #9a9b95)'] };
 const eur = n => `${(Math.round(n * 100) / 100).toLocaleString('es-ES', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })} €`;
 // Hora resultante de sumar h horas a «HH:MM» y en qué día cae (0 = mismo día, 1 = día siguiente…)
@@ -19,6 +23,7 @@ export default function Fines() {
   const toast = useToast();
   const ro = useReadOnly();
   const [st, setSt] = useState('pendiente');
+  const [ty, setTy] = useState('');
   const [player, setPlayer] = useState(null);
   const [act, setAct] = useState(null); // { f, status }
   const [cfg, setCfg] = useState(false);
@@ -26,9 +31,9 @@ export default function Fines() {
   const byPlayer = useMemo(() => {
     const m = new Map();
     for (const f of list) {
-      if (!m.has(f.player_id)) m.set(f.player_id, { id: f.player_id, name: f.player_name, photo: f.photo_file_id, n: 0, pend: 0, paid: 0 });
+      if (!m.has(f.player_id)) m.set(f.player_id, { id: f.player_id, name: f.player_name, photo: f.photo_file_id, n: 0, nLate: 0, nMiss: 0, pend: 0, paid: 0 });
       const x = m.get(f.player_id);
-      if (f.status !== 'anulada') x.n++;
+      if (f.status !== 'anulada') { x.n++; if (tyOf(f) === 'fuera_plazo') x.nLate++; else x.nMiss++; }
       if (f.status === 'pendiente') x.pend += f.amount;
       if (f.status === 'pagada') x.paid += f.amount;
     }
@@ -39,8 +44,9 @@ export default function Fines() {
   const c = d.data.config;
   const days = (s.data?.collectiveDays || []).map(x => WEEKDAYS[x].toLowerCase()).join(', ');
   const tot = k => list.filter(f => f.status === k).reduce((a, f) => a + f.amount, 0);
-  const shown = list.filter(f => (!st || f.status === st) && (!player || f.player_id === player));
-  const exportX = () => exportXLSX([{ name: 'Multas', columns: [{ key: 'date', label: 'Entrenamiento' }, { key: 'player_name', label: 'Jugador' }, { key: 'reason', label: 'Motivo' }, { key: 'amount', label: 'Importe (€)' }, { key: 'status', label: 'Estado' }, { key: 'note', label: 'Nota' }], rows: list }], 'multas-primer-equipo.xlsx');
+  const shown = list.filter(f => (!st || f.status === st) && (!ty || tyOf(f) === ty) && (!player || f.player_id === player));
+  const cnt = t => list.filter(f => f.status !== 'anulada' && tyOf(f) === t);
+  const exportX = () => exportXLSX([{ name: 'Multas', columns: [{ key: 'date', label: 'Entrenamiento' }, { key: 'player_name', label: 'Jugador' }, { key: 'tipo', label: 'Tipo' }, { key: 'reason', label: 'Motivo' }, { key: 'rpe_entregado', label: 'RPE entregado' }, { key: 'amount', label: 'Importe (€)' }, { key: 'status', label: 'Estado' }, { key: 'note', label: 'Nota' }], rows: list.map(f => ({ ...f, tipo: TY[tyOf(f)][0], rpe_entregado: fmtAt(f.rpe_at) })) }], 'multas-primer-equipo.xlsx');
 
   return <div>
     <PageHead back="/primer-equipo" title="Multas" sub={c.enabled ? `En vigor desde el ${fmtDate(c.startDate)}` : 'Desactivadas'} actions={<>
@@ -53,9 +59,10 @@ export default function Fines() {
         {c.reminder !== false && <><i>→</i>
         <div><b>{plusH(c.rpeTime, c.reminderHours).time} h</b><span>{dayTxt(plusH(c.rpeTime, c.reminderHours).day)} · +{hTxt(c.reminderHours)}</span><small>«Te queda{c.fineHours - c.reminderHours === 1 ? ' 1 hora' : `n ${hTxt(c.fineHours - c.reminderHours)}`} para el RPE»</small></div></>}
         <i>→</i>
-        <div className="fr-fine"><b>{plusH(c.rpeTime, c.fineHours).time} h</b><span>{dayTxt(plusH(c.rpeTime, c.fineHours).day)} · +{hTxt(c.fineHours)}</span><small>Sin RPE: multa de {eur(c.amount)}</small></div>
+        <div className="fr-fine"><b>{plusH(c.rpeTime, c.fineHours).time} h</b><span>{dayTxt(plusH(c.rpeTime, c.fineHours).day)} · +{hTxt(c.fineHours)}</span><small>Sin RPE: multa de {eur(c.amount)} · si lo entrega después: {eur(c.amountLate ?? c.amount)}</small></div>
       </div>
       <p className="small muted" style={{ margin: 0 }}>Solo cuenta el RPE (el wellness no genera multas). Se aplica a jugadores del primer equipo con cuenta en la app; no se multa a quien tenga una lesión abierta ni a quien esté marcado como ausente, justificado o lesionado en ese entrenamiento. Las multas se acumulan y puedes anularlas o marcarlas como pagadas.</p>
+      <div className="fine-types small"><span><i style={{ background: TY.no_completado[1] }} /><b>RPE no completado:</b> pasado el plazo, el jugador no ha registrado el RPE.</span><span><i style={{ background: TY.fuera_plazo[1] }} /><b>RPE fuera de plazo:</b> lo registró, pero después del límite. Si un jugador con multa por no completarlo lo entrega más tarde, la multa pasa a «fuera de plazo»{(c.amountLate ?? c.amount) !== c.amount ? ` (${eur(c.amountLate)})` : ''}.</span></div>
       {!c.notificationsEnabled && <div className="alert warn small"><span>⚠</span><div>Los avisos automáticos están desactivados (Configuración → Avisos): las multas se siguen generando, pero los jugadores no reciben los recordatorios.</div></div>}
     </div>
 
@@ -63,20 +70,23 @@ export default function Fines() {
       <div className="card kpi" style={{ borderTop: '4px solid var(--rojo)' }}><span className="v">{eur(tot('pendiente'))}</span><span className="l">Pendiente de pago</span><span className="s">{list.filter(f => f.status === 'pendiente').length} multas</span></div>
       <div className="card kpi" style={{ borderTop: '4px solid var(--verde)' }}><span className="v">{eur(tot('pagada'))}</span><span className="l">Pagado</span><span className="s">{list.filter(f => f.status === 'pagada').length} multas</span></div>
       <div className="card kpi"><span className="v">{eur(tot('pendiente') + tot('pagada'))}</span><span className="l">Total acumulado</span><span className="s">{list.filter(f => f.status !== 'anulada').length} multas · {list.filter(f => f.status === 'anulada').length} anuladas</span></div>
+      <div className="card kpi" style={{ borderTop: `4px solid ${TY.no_completado[1]}` }}><span className="v">{cnt('no_completado').length}</span><span className="l">RPE no completado</span><span className="s">{eur(cnt('no_completado').reduce((a, f) => a + f.amount, 0))}</span></div>
+      <div className="card kpi" style={{ borderTop: `4px solid ${TY.fuera_plazo[1]}` }}><span className="v">{cnt('fuera_plazo').length}</span><span className="l">RPE fuera de plazo</span><span className="s">{eur(cnt('fuera_plazo').reduce((a, f) => a + f.amount, 0))}</span></div>
     </div>
 
-    {!list.length ? <Empty title="Sin multas">{c.enabled ? `Se generarán solas cuando un jugador no registre el RPE en las 24 h siguientes al aviso (a partir del ${fmtDate(c.startDate)}).` : 'Las multas están desactivadas. Actívalas en «Ajustes».'}</Empty> :
+    {!list.length ? <Empty title="Sin multas">{c.enabled ? `Se generarán solas cuando un jugador no registre el RPE en las ${hTxt(c.fineHours)} siguientes al aviso (a partir del ${fmtDate(c.startDate)}).` : 'Las multas están desactivadas. Actívalas en «Ajustes».'}</Empty> :
     <div className="grid g2" style={{ alignItems: 'start' }}>
       <div className="card"><h3>Por jugador</h3>
         <div className="fine-pl">{byPlayer.map(x => <button key={x.id} className={player === x.id ? 'on' : ''} onClick={() => setPlayer(player === x.id ? null : x.id)}>
-          <Avatar name={x.name} fileId={x.photo} /><span className="fp-n">{x.name}<small>{x.n} multa{x.n === 1 ? '' : 's'}{x.paid ? ` · pagado ${eur(x.paid)}` : ''}</small></span>
+          <Avatar name={x.name} fileId={x.photo} /><span className="fp-n">{x.name}<small>{x.nMiss} no completado{x.nMiss === 1 ? '' : 's'} · {x.nLate} fuera de plazo{x.paid ? ` · pagado ${eur(x.paid)}` : ''}</small></span>
           <b className={x.pend ? 'due' : ''}>{eur(x.pend)}</b></button>)}</div>
         <p className="small muted" style={{ margin: '8px 0 0' }}>Importe pendiente de cada jugador. Toca uno para ver solo sus multas.</p></div>
       <div className="card"><div className="row between" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>{player ? byPlayer.find(x => x.id === player)?.name : 'Detalle'}</h3>
         <Seg value={st} onChange={setSt} options={[{ value: 'pendiente', label: 'Pendientes' }, { value: 'pagada', label: 'Pagadas' }, { value: 'anulada', label: 'Anuladas' }, { value: '', label: 'Todas' }]} /></div>
+        <div style={{ marginBottom: 8 }}><Seg value={ty} onChange={setTy} options={[{ value: '', label: 'Todos los tipos' }, { value: 'no_completado', label: 'No completado' }, { value: 'fuera_plazo', label: 'Fuera de plazo' }]} /></div>
         {!shown.length ? <p className="muted small">No hay multas en esta vista.</p> : <div className="list">{shown.map(f => <div key={f.id} className="lrow fine-row" style={{ cursor: 'default' }}>
           <span className="lrow-main"><span className="lrow-t">{player ? fmtDate(f.date, { weekday: 'long', day: 'numeric', month: 'short' }) : f.player_name}</span>
-            <span className="lrow-s">{player ? f.reason : `${fmtDate(f.date, { weekday: 'short', day: 'numeric', month: 'short' })} · ${f.reason}`}{f.note ? ` · ${f.note}` : ''}</span></span>
+            <span className="lrow-s"><span className="fine-ty" style={{ '--c': TY[tyOf(f)][1] }}>{TY[tyOf(f)][0]}</span> {player ? '' : `${fmtDate(f.date, { weekday: 'short', day: 'numeric', month: 'short' })} · `}{tyOf(f) === 'fuera_plazo' && f.rpe_at ? `entregado ${fmtAt(f.rpe_at)}` : f.reason}{f.note ? ` · ${f.note}` : ''}</span></span>
           <b className="fine-amt">{eur(f.amount)}</b>
           <span className="fine-st" style={{ '--c': ST[f.status][1] }}>{ST[f.status][0]}</span>
           {!ro && <span className="fine-act">{f.status === 'pendiente' ? <><button className="btn sm" onClick={() => setAct({ f, status: 'pagada' })}>Pagada</button><button className="btn sm ghost" onClick={() => setAct({ f, status: 'anulada' })}>Anular</button></>
@@ -105,17 +115,20 @@ function FineAction({ f, status, onClose, onDone }) {
 
 function FineCfg({ v0, rpeTime, onClose, onSaved }) {
   const toast = useToast();
-  const [v, setV] = useState({ enabled: true, reminder: true, amount: 2, startDate: '', reminderHours: 23, fineHours: 24, ...v0 });
+  const [v, setV] = useState({ enabled: true, reminder: true, amount: 2, amountLate: v0?.amount ?? 2, startDate: '', reminderHours: 23, fineHours: 24, ...v0 });
   const [err, setErr] = useState(null);
   return <Modal title="Ajustes de multas" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={async () => {
-    try { await api.put('/settings/fines', { value: { ...v, amount: Number(v.amount), reminderHours: Number(String(v.reminderHours).replace(',', '.')), fineHours: Number(String(v.fineHours).replace(',', '.')) } }); toast('Ajustes guardados'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
+    try { await api.put('/settings/fines', { value: { ...v, amount: Number(v.amount), amountLate: Number(v.amountLate), reminderHours: Number(String(v.reminderHours).replace(',', '.')), fineHours: Number(String(v.fineHours).replace(',', '.')) } }); toast('Ajustes guardados'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
   }}>Guardar</button></>}>
     <div className="stack">
       <label className="check"><input type="checkbox" checked={v.enabled} onChange={e => setV({ ...v, enabled: e.target.checked })} /> Generar multas por RPE no registrado</label>
       <label className="check"><input type="checkbox" checked={v.reminder} onChange={e => setV({ ...v, reminder: e.target.checked })} /> Enviar un último aviso antes de la multa</label>
       <div className="inline-fields">
         <Field label="En vigor desde"><input type="date" value={v.startDate} onChange={e => setV({ ...v, startDate: e.target.value })} /></Field>
-        <Field label="Importe por multa (€)"><input type="number" min="0" step="0.5" value={v.amount} onChange={e => setV({ ...v, amount: e.target.value })} /></Field>
+      </div>
+      <div className="inline-fields">
+        <Field label="Multa por RPE no completado (€)"><input type="number" min="0" step="0.5" value={v.amount} onChange={e => setV({ ...v, amount: e.target.value })} /></Field>
+        <Field label="Multa por RPE fuera de plazo (€)"><input type="number" min="0" step="0.5" value={v.amountLate} onChange={e => setV({ ...v, amountLate: e.target.value })} /></Field>
       </div>
       <div className="inline-fields">
         <Field label="Último aviso" hint="horas después del aviso de RPE"><input type="number" min="0.5" max="168" step="0.5" value={v.reminderHours} disabled={!v.reminder} onChange={e => setV({ ...v, reminderHours: e.target.value })} /></Field>

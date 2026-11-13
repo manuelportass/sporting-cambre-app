@@ -70,14 +70,26 @@ function settle(now = new Date()) {
       if (db.prepare("SELECT 1 FROM fines WHERE player_id=? AND date=? AND kind='rpe'").get(pl.player_id, d)) continue;
       const at = firstRpe(pl.player_id, d);
       if (at && at <= sqlUtc(deadline)) continue;
-      const id = db.prepare("INSERT INTO fines(player_id,date,kind,reason,amount,deadline) VALUES (?,?,'rpe',?,?,?)")
-        .run(pl.player_id, d, `RPE no registrado en las ${String(c.fineHours).replace('.', ',')} h siguientes al aviso`, Number(c.amount) || 2, sqlUtc(deadline)).lastInsertRowid;
-      audit('fine', id, 'auto_create', null, { player_id: pl.player_id, date: d }, null);
+      const sub = at ? 'fuera_plazo' : 'no_completado';
+      const id = db.prepare("INSERT INTO fines(player_id,date,kind,subtype,reason,amount,deadline,rpe_at) VALUES (?,?,'rpe',?,?,?,?,?)")
+        .run(pl.player_id, d, sub, reasonFor(sub, c), amountFor(sub, c), sqlUtc(deadline), at || null).lastInsertRowid;
+      audit('fine', id, 'auto_create', null, { player_id: pl.player_id, date: d, subtype: sub }, null);
       created++;
     }
   }
+  // Si un jugador multado por no completar el RPE lo entrega después, la multa pasa a «fuera de plazo»
+  for (const f of db.prepare("SELECT * FROM fines WHERE kind='rpe' AND subtype='no_completado' AND status='pendiente'").all()) {
+    const at = firstRpe(f.player_id, f.date);
+    if (!at) continue;
+    db.prepare("UPDATE fines SET subtype='fuera_plazo', rpe_at=?, reason=?, amount=? WHERE id=?").run(at, reasonFor('fuera_plazo', c), amountFor('fuera_plazo', c), f.id);
+    audit('fine', f.id, 'auto_late', { subtype: 'no_completado', amount: f.amount }, { subtype: 'fuera_plazo' }, null);
+  }
   return created;
 }
+const amountFor = (sub, c) => (sub === 'fuera_plazo' ? Number(c.amountLate ?? c.amount) : Number(c.amount)) || 0;
+const reasonFor = (sub, c) => (sub === 'fuera_plazo'
+  ? `RPE entregado fuera de plazo (después de las ${String(c.fineHours).replace('.', ',')} h)`
+  : `RPE no completado en las ${String(c.fineHours).replace('.', ',')} h siguientes al aviso`);
 
 // Jugadores (con avisos activados) a los que hay que recordar que queda 1 hora para el RPE del día `date`
 function reminderTargets(date) {

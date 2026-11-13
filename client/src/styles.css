@@ -888,3 +888,14 @@ fieldset.ro-fs:disabled button { cursor: default; }
 .statusbtns.ro button { pointer-events: none; }
 .statusbtns.ro button:not(.on) { opacity: .35; }
 .ck-note { grid-column: 1 / -1; font-size: 13px; color: var(--ink-2, #333); background: #f6f6f3; border-radius: 8px; padding: 5px 10px; margin: 2px 0 2px 44px; white-space: pre-wrap; }
+.fine-ty { display: inline-block; font-size: 11px; font-weight: 700; color: var(--c); border: 1px solid var(--c); border-radius: 999px; padding: 0 7px; margin-right: 4px; }
+.fine-types { display: flex; flex-direction: column; gap: 4px; }
+.fine-types i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+.fine-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+@media (max-width: 1100px) { .fine-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
+.ck-tl { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }
+.ck-tl > div { flex: 1; min-width: 150px; display: flex; flex-direction: column; padding: 10px 12px; border-radius: 12px; background: #f6f6f3; }
+.ck-tl small { color: var(--ink-3); font-size: 12px; }
+.ck-tl b { font: 700 28px/1.1 var(--head); }
+.ck-tl span { font-size: 12px; color: var(--ink-3); }
+.ck-h4 { margin: 4px 0 6px; font: 600 13px var(--body, inherit); color: var(--ink-2, #333); }

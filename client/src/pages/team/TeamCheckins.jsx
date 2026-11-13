@@ -1,7 +1,8 @@
 // Primer equipo · Wellness diario y RPE de cada sesión: resumen visual de las respuestas de los jugadores
 import React, { useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, CartesianGrid } from 'recharts';
-import { Avatar, Empty, ErrorBox, Loading, PageHead, useApi } from '../../components/ui';
+import { Avatar, Empty, ErrorBox, Loading, PageHead, Seg, useApi } from '../../components/ui';
+import { AcuteChronicChart, AcwrChart } from '../../components/charts';
 import { addDays, fmtDate, fmtNum, todayISO } from '../../lib/format';
 
 const PCT = p => (p == null ? '#c9cac4' : p >= 75 ? 'var(--verde)' : p >= 50 ? 'var(--amarillo)' : p >= 25 ? 'var(--naranja)' : 'var(--rojo)');
@@ -74,6 +75,7 @@ export function TeamRpe() {
   const chart = [...days].reverse().map(d => ({ date: d.date, avg: d.avg_rpe, n: d.n }));
   return <div>
     <PageHead back="/primer-equipo" title="RPE" sub="Esfuerzo percibido de cada sesión (martes, jueves y viernes)" />
+    <TeamLoad />
     {!days.length ? <Empty title="Sin sesiones de entrenamiento en las últimas semanas" /> : <>
       <div className="card"><h3>RPE medio por sesión · últimas 8 semanas</h3>
         <ResponsiveContainer width="100%" height={170}><BarChart data={chart} margin={{ top: 6, right: 4, left: -18, bottom: 0 }}>
@@ -103,6 +105,32 @@ export function TeamRpe() {
           {cur.missing.length > 0 && <div className="ck-miss"><span className="small"><b>Sin RPE ({cur.missing.length}):</b></span> {cur.missing.map(m => <span key={m.player_id} className={'tag' + (m.reason ? '' : ' warn')}>{m.name}{m.reason ? ` · ${m.reason}` : ''}</span>)}</div>}
         </div>
       </div>
+    </>}
+  </div>;
+}
+
+// Media del equipo: carga aguda, crónica y ACWR
+const SEASON_START = '2026-07-27';
+function TeamLoad() {
+  const [range, setRange] = useState(56);
+  const to = todayISO(), from = range === 'season' ? SEASON_START : addDays(to, -range + 1);
+  const r = useApi(`/team/load-team?from=${from}&to=${to}`);
+  const last = r.data ? [...r.data.series].reverse().find(x => x.acwr != null) : null;
+  const ZN = { verde: 'Zona óptima', amarillo: 'Precaución', naranja: 'Riesgo', rojo: 'Fuera de rango', gris: 'Sin datos' };
+  return <div className="card" style={{ marginBottom: 14 }}>
+    <div className="row between" style={{ marginBottom: 6 }}><h3 style={{ margin: 0 }}>Carga del equipo · media de los jugadores</h3>
+      <Seg value={range} onChange={setRange} options={[{ value: 28, label: '4 sem.' }, { value: 56, label: '8 sem.' }, { value: 112, label: '16 sem.' }, { value: 'season', label: 'Temporada' }]} /></div>
+    {r.error ? <ErrorBox error={r.error} retry={r.reload} /> : !r.data ? <Loading /> : <>
+      {last && <div className="ck-tl">
+        <div><small>Aguda media</small><b>{fmtNum(last.acute)}</b><span>{r.data.unit}</span></div>
+        <div><small>Crónica media</small><b>{fmtNum(last.chronic)}</b><span>{r.data.unit}</span></div>
+        <div><small>ACWR medio</small><b style={{ color: { verde: '#2e9e4f', amarillo: '#c99a00', naranja: '#ef7d32', rojo: '#d6262f' }[last.acwrColor] }}>{fmtNum(last.acwr, 2)}</b><span>{ZN[last.acwrColor] || ''} · {last.n} jugadores · {fmtDate(last.date, { day: 'numeric', month: 'short' })}</span></div>
+      </div>}
+      <div className="grid g2">
+        <div><h4 className="ck-h4">Aguda y crónica (media)</h4><AcuteChronicChart series={r.data.series} unit={r.data.unit} height={220} /></div>
+        <div><h4 className="ck-h4">ACWR medio</h4><AcwrChart series={r.data.series} bands={r.data.bands} height={220} /></div>
+      </div>
+      <p className="small muted" style={{ margin: '6px 0 0' }}>Cada día, media de los jugadores del primer equipo con el valor calculable (los días con RPE pendiente no se rellenan). Orientativo: no predice lesiones.</p>
     </>}
   </div>;
 }

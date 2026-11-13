@@ -394,6 +394,11 @@ if (!/'coach'/.test(db.prepare("SELECT sql FROM sqlite_master WHERE type='table'
     COMMIT;`);
   db.pragma('foreign_keys = ON');
 }
+// Multas: tipo de incumplimiento (no_completado = sin RPE · fuera_plazo = RPE entregado tarde)
+if (!cols('fines').includes('subtype')) {
+  db.exec("ALTER TABLE fines ADD COLUMN subtype TEXT NOT NULL DEFAULT 'no_completado'");
+  db.exec('ALTER TABLE fines ADD COLUMN rpe_at TEXT');
+}
 // Apodo del jugador (saludo en su pantalla de inicio)
 if (!cols('players').includes('nickname')) db.exec('ALTER TABLE players ADD COLUMN nickname TEXT');
 if (!cols('team_sessions').includes('track_missing')) db.exec('ALTER TABLE team_sessions ADD COLUMN track_missing INTEGER DEFAULT 1');
@@ -451,7 +456,8 @@ const DEFAULT_SETTINGS = {
   // Recordatorios al móvil (notificaciones push). Hora de Madrid; solo a quien no lo ha registrado.
   notifications: { enabled: true, wellness: { enabled: true, time: '17:00' }, rpe: { enabled: true, time: '22:00' }, eva: { enabled: true, time: '22:00' } },
   // Multas por no registrar el RPE en las 24 h siguientes al aviso (desde la fecha de inicio)
-  fines: { enabled: true, startDate: '2026-11-02', amount: 2, reminder: true, reminderHours: 23, fineHours: 24 },
+  // amount = RPE no completado · amountLate = RPE entregado fuera de plazo
+  fines: { enabled: true, startDate: '2026-11-02', amount: 2, amountLate: 2, reminder: true, reminderHours: 23, fineHours: 24 },
   sessionTypes: ['Entrenamiento', 'Recuperación', 'Activación'],
   extraTypes: ['Fuerza / gimnasio', 'Carrera continua', 'Intervalos', 'Fisioterapia / readaptación', 'Movilidad', 'Otro deporte', 'Otro'],
 };
@@ -531,7 +537,18 @@ db.prepare('INSERT OR IGNORE INTO test_types(name,family,fields,protocol) VALUES
   { key: 'muslo_d', label: 'Muslo derecho', unit: 'cm', decimals: 1, better: null },
   { key: 'muslo_i', label: 'Muslo izquierdo', unit: 'cm', decimals: 1, better: null },
   { key: 'gluteo', label: 'Glúteo', unit: 'cm', decimals: 1, better: null },
+  { key: 'gemelo_d', label: 'Gemelo derecho', unit: 'cm', decimals: 1, better: null },
+  { key: 'gemelo_i', label: 'Gemelo izquierdo', unit: 'cm', decimals: 1, better: null },
 ]), 'Cinta métrica inextensible, jugador de pie y relajado, sin comprimir la piel. Mismo evaluador y mismos puntos de referencia en cada medición. El índice cintura-cadera se calcula solo (cintura / cadera).');
+// Perímetros: gemelo derecho e izquierdo (añadidos después)
+{
+  const t = db.prepare("SELECT id, fields FROM test_types WHERE name='Perímetros'").get();
+  const f = t && JSON.parse(t.fields);
+  if (f && !f.some(x => x.key === 'gemelo_d')) {
+    f.push({ key: 'gemelo_d', label: 'Gemelo derecho', unit: 'cm', decimals: 1, better: null }, { key: 'gemelo_i', label: 'Gemelo izquierdo', unit: 'cm', decimals: 1, better: null });
+    db.prepare('UPDATE test_types SET fields=? WHERE id=?').run(JSON.stringify(f), t.id);
+  }
+}
 // Tests de salto: mejor salto + media de 3 saltos (análisis por vídeo o registro manual)
 for (const t of db.prepare("SELECT id, fields FROM test_types WHERE family='salto'").all()) {
   const f = JSON.parse(t.fields);
