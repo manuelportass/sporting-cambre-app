@@ -178,7 +178,7 @@ r.post('/club/crest', A.requireAdmin, upload.single('file'), h((req, res) => {
 }));
 
 // ---------- Jugadores (registro único) ----------
-const PLAYER_FIELDS = ['first_name', 'last_name', 'category_id', 'position', 'dominant_leg', 'sex', 'nickname', 'joined_at', 'notes', 'availability', 'custom', 'active'];
+const PLAYER_FIELDS = ['first_name', 'last_name', 'category_id', 'position', 'dominant_leg', 'sex', 'nickname', 'is_captain', 'joined_at', 'notes', 'availability', 'custom', 'active'];
 const PRIVATE_FIELDS = ['birth_date', 'weight_kg', 'height_cm', 'anthropometry', 'sports_history'];
 
 function playerRow(p) {
@@ -195,6 +195,7 @@ function cleanPlayer(b, partial) {
   }
   if (b.position !== undefined) o.position = optText(b.position, 60);
   if (b.dominant_leg !== undefined) o.dominant_leg = b.dominant_leg ? oneOf(b.dominant_leg, ['derecha', 'izquierda', 'ambas'], 'Pierna dominante') : null;
+  if (b.is_captain !== undefined) o.is_captain = b.is_captain ? 1 : 0;
   if (b.nickname !== undefined) o.nickname = optText(b.nickname, 40);
   if (b.sex !== undefined) o.sex = b.sex ? oneOf(b.sex, ['M', 'F'], 'Sexo') : null;
   if (b.joined_at !== undefined) o.joined_at = optDate(b.joined_at, 'Fecha de incorporación');
@@ -279,6 +280,8 @@ r.put('/players/:id', A.requireAdmin, h((req, res) => {
   if (Object.keys(o).length) {
     o.updated_at = new Date().toISOString();
     db.prepare(`UPDATE players SET ${Object.keys(o).map(k => `${k}=@${k}`).join(',')} WHERE id=@id`).run({ ...o, id });
+    // Un único capitán por equipo
+    if (o.is_captain === 1) db.prepare('UPDATE players SET is_captain=0 WHERE id!=? AND category_id IS ?').run(id, o.category_id ?? before.category_id);
   }
   if (req.body.private) upsertPrivate(id, cleanPrivate(req.body.private));
   if (Array.isArray(req.body.slot_ids)) setAssignments(id, req.body.slot_ids);

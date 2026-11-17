@@ -18,10 +18,43 @@ function notFuture(date) { if (date > today()) throw bad('No se pueden registrar
 function notTooOld(date, days = 14) { if (L.diffDays(date, today()) > days) throw bad(`Solo se pueden registrar sesiones de los últimos ${days} días. Si necesitas registrar algo anterior, habla con el preparador físico.`); }
 
 r.get('/profile', h((req, res) => {
-  const p = db.prepare('SELECT p.id, p.first_name, p.last_name, p.nickname, p.position, p.dominant_leg, p.photo_file_id, c.name AS category_name FROM players p LEFT JOIN categories c ON c.id=p.category_id WHERE p.id=?').get(pid(req));
+  const p = db.prepare('SELECT p.id, p.first_name, p.last_name, p.nickname, p.is_captain, p.position, p.dominant_leg, p.photo_file_id, c.name AS category_name FROM players p LEFT JOIN categories c ON c.id=p.category_id WHERE p.id=?').get(pid(req));
   if (!p) throw notFound();
   const s = settings();
   res.json({ ...p, full_name: `${p.first_name} ${p.last_name}`.trim(), view: s.playerView });
+}));
+
+// Capitán: multas de todo el equipo (solo consulta), con el detalle de cada una
+r.get('/team-fines', h((req, res) => {
+  const me = db.prepare('SELECT is_captain FROM players WHERE id=?').get(pid(req));
+  if (!me?.is_captain) throw new HttpError(403, 'Solo el capitán puede ver las multas del equipo.');
+  const F = require('../lib/fines');
+  F.settle();
+  const s = settings();
+  const list = db.prepare(`SELECT f.id, f.player_id, f.date, f.kind, f.subtype, f.reason, f.amount, f.deadline, f.rpe_at, f.status, f.note, f.resolved_at, f.paid_by,
+      p.first_name, p.last_name, p.nickname, p.photo_file_id
+    FROM fines f JOIN players p ON p.id=f.player_id WHERE f.status != 'anulada' ORDER BY f.date DESC, p.last_name`).all() // el capitán no ve las anuladas
+    .map(f => ({ ...f, player_name: `${f.first_name} ${f.last_name}`.trim(), weekday: WD[isoWeekday(f.date)] }));
+  res.json({ config: F.cfg(s), list });
+}));
+
+// Capitán: marcar una multa como pagada (o deshacerlo si la marcó él). Anular solo puede el preparador.
+r.post('/team-fines/:id/paid', h((req, res) => {
+  const me = db.prepare('SELECT is_captain, first_name, last_name FROM players WHERE id=?').get(pid(req));
+  if (!me?.is_captain) throw new HttpError(403, 'Solo el capitán puede gestionar el cobro de las multas.');
+  const f = db.prepare('SELECT * FROM fines WHERE id=?').get(req.params.id);
+  if (!f) throw notFound();
+  const by = `capitán (${`${me.first_name} ${me.last_name}`.trim()})`;
+  if (req.body?.undo) {
+    if (f.status !== 'pagada' || !String(f.paid_by || '').startsWith('capitán')) throw bad('Solo puedes deshacer los cobros que hayas marcado tú.');
+    db.prepare("UPDATE fines SET status='pendiente', resolved_at=NULL, paid_by=NULL WHERE id=?").run(f.id);
+    audit('fine', f.id, 'status:pendiente', f, { status: 'pendiente', by }, req.user.id);
+  } else {
+    if (f.status !== 'pendiente') throw bad('Solo se pueden marcar como pagadas las multas pendientes.');
+    db.prepare("UPDATE fines SET status='pagada', resolved_at=datetime('now'), paid_by=? WHERE id=?").run(by, f.id);
+    audit('fine', f.id, 'status:pagada', f, { status: 'pagada', by }, req.user.id);
+  }
+  res.json({ ok: true });
 }));
 
 // Estado del día: sesiones programadas y si ya registró RPE/wellness

@@ -878,7 +878,7 @@ r.put('/fines/:id', h((req, res) => {
   if (!f) throw notFound();
   const status = oneOf(req.body?.status, ['pendiente', 'pagada', 'anulada'], 'Estado');
   const note = optText(req.body?.note, 500) ?? f.note;
-  db.prepare("UPDATE fines SET status=?, note=?, resolved_at=CASE WHEN ?='pendiente' THEN NULL ELSE datetime('now') END WHERE id=?").run(status, note, status, f.id);
+  db.prepare("UPDATE fines SET status=?, note=?, resolved_at=CASE WHEN ?='pendiente' THEN NULL ELSE datetime('now') END, paid_by=? WHERE id=?").run(status, note, status, status === 'pagada' ? 'preparador' : null, f.id);
   audit('fine', f.id, 'status:' + status, f, { status, note }, req.user.id);
   res.json({ ok: true });
 }));

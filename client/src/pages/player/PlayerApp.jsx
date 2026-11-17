@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { useAuth, useClub } from '../../App';
-import { Avatar, ColorBadge, Empty, ErrorBox, Field, Loading, Modal, useApi, useToast } from '../../components/ui';
+import { Avatar, ColorBadge, Empty, ErrorBox, Field, Loading, Modal, Seg, useApi, useToast } from '../../components/ui';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, ReferenceLine, Cell, LineChart, Line } from 'recharts';
 import { fileUrl } from '../../api';
 import { crestOf, teamName } from '../../lib/crests';
@@ -15,6 +15,7 @@ const Icon = ({ d }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColo
 const IC = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z', hist: 'M12 8v4l3 2M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5',
   prog: 'M4 20V10M10 20V4M16 20v-7M22 20H2', season: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 2l3 5-3 3-3-3zM2.5 10l4.5 1 1 4.5M21.5 10l-4.5 1-1 4.5M8 21l1-5.5h6L16 21', user: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
+  fine: 'M4 7h16v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 7l2-3h12l2 3M9 12h6M12 12v5',
   rpe: 'M13 2L3 14h9l-1 8 10-12h-9z', pain: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM8 15s1.5-2 4-2 4 2 4 2M9 9h.01M15 9h.01', well: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z', plus: 'M12 5v14M5 12h14',
 };
 
@@ -24,9 +25,10 @@ export default function PlayerApp() {
   const go = (name, extra = {}) => { setView({ name, ...extra }); window.scrollTo(0, 0); };
   const profile = useApi('/me/profile');
   const club = useClub();
-  const nav = [['inicio', 'Inicio', IC.home], ['temporada', 'Mi temporada', IC.season], ['progreso', 'Mi progreso', IC.prog], ['perfil', 'Perfil', IC.user]];
-  const main = nav.some(([k]) => k === view.name);
   const p = profile.data;
+  // El capitán tiene un apartado más: las multas del equipo
+  const nav = [['inicio', 'Inicio', IC.home], ['temporada', 'Mi temporada', IC.season], ['progreso', 'Mi progreso', IC.prog], ...(p?.is_captain ? [['multas', 'Multas', IC.fine]] : []), ['perfil', 'Perfil', IC.user]];
+  const main = nav.some(([k]) => k === view.name);
   return <div className="pl">
     {view.name === 'inicio' ? <HomeScreen p={p} club={club} go={go} /> :
       <div className="pl-top slim"><div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
@@ -42,8 +44,59 @@ export default function PlayerApp() {
       {view.name === 'progreso' && <Progress />}
       {view.name === 'registros' && <History />}
       {view.name === 'perfil' && <Profile p={p} go={go} />}
+      {view.name === 'multas' && p?.is_captain && <CaptainFines />}
     </div>}
     <nav className="pl-nav"><div>{nav.map(([k, l, d]) => <button key={k} className={view.name === k ? 'on' : ''} onClick={() => go(k)}><Icon d={d} />{l}</button>)}</div></nav>
+  </div>;
+}
+
+// Capitán: multas del equipo (solo consulta) con el motivo detallado de cada una
+const madrid = (iso, o) => new Date(iso.replace(' ', 'T') + 'Z').toLocaleString('es-ES', { timeZone: 'Europe/Madrid', ...o });
+const whenTxt = iso => madrid(iso, { weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+const eur = n => `${(Math.round(n * 100) / 100).toLocaleString('es-ES', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })} €`;
+const hoursLate = (a, b) => { const h = (Date.parse(a.replace(' ', 'T') + 'Z') - Date.parse(b.replace(' ', 'T') + 'Z')) / 36e5; return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${String(Math.round(h * 10) / 10).replace('.', ',')} h`; };
+const FST = { pendiente: ['Pendiente', '#d6262f'], pagada: ['Pagada', '#2e9e4f'], anulada: ['Anulada', '#9a9b95'] };
+function CaptainFines() {
+  const d = useApi('/me/team-fines');
+  const toast = useToast();
+  const [st, setSt] = useState('pendiente');
+  const [open, setOpen] = useState(null);
+  const [conf, setConf] = useState(null); // multa a confirmar como pagada
+  const pay = async (f, undo) => { try { await api.post(`/me/team-fines/${f.id}/paid`, undo ? { undo: true } : {}); toast(undo ? 'Cobro deshecho' : 'Multa marcada como pagada'); d.reload(); } catch (e) { toast(e.message, 'err'); } };
+  if (d.loading && !d.data) return <Loading />;
+  if (d.error) return <ErrorBox error={d.error} retry={d.reload} />;
+  const { config: c, list } = d.data;
+  const live = list.filter(f => f.status !== 'anulada');
+  const pend = list.filter(f => f.status === 'pendiente').reduce((a, f) => a + f.amount, 0);
+  const paid = list.filter(f => f.status === 'pagada').reduce((a, f) => a + f.amount, 0);
+  const byP = new Map();
+  for (const f of list.filter(x => !st || x.status === st)) { if (!byP.has(f.player_id)) byP.set(f.player_id, { name: f.player_name, photo: f.photo_file_id, items: [], total: 0 }); const x = byP.get(f.player_id); x.items.push(f); x.total += f.amount; }
+  const groups = [...byP.entries()].sort((a, b) => b[1].total - a[1].total || a[1].name.localeCompare(b[1].name));
+  const hTxt = h => `${String(h).replace('.', ',')} h`;
+  return <div className="stack" style={{ gap: 12 }}>
+    <h2 style={{ margin: 0 }}>Multas del equipo</h2>
+    <div className="cf-kpis"><div><b>{eur(pend)}</b><small>Pendiente</small></div><div><b>{eur(paid)}</b><small>Pagado</small></div><div><b>{live.length}</b><small>Multas</small></div></div>
+    <div className="card small cf-rule">Los días de entrenamiento llega el aviso de RPE a las <b>{c.rpeTime}</b>. Si a las <b>{hTxt(c.fineHours)}</b> del aviso un jugador no lo ha registrado, se le multa: <b>{eur(c.amount)}</b> si no lo completa y <b>{eur(c.amountLate ?? c.amount)}</b> si lo entrega fuera de plazo. No se multa a lesionados ni a quien el preparador marque como ausente o justificado.</div>
+    <Seg value={st} onChange={setSt} options={[{ value: 'pendiente', label: 'Pendientes' }, { value: 'pagada', label: 'Pagadas' }, { value: '', label: 'Todas' }]} />
+    {!groups.length ? <Empty title="No hay multas en esta vista" /> : groups.map(([id, g]) => <div key={id} className="card cf-p">
+      <button className="cf-ph" onClick={() => setOpen(open === id ? null : id)}><Avatar name={g.name} fileId={g.photo} /><span><b>{g.name}</b><small>{g.items.length} multa{g.items.length === 1 ? '' : 's'}{g.items.every(f => f.status === 'pagada') ? ' · pagado' : ''}</small></span><b className="cf-tot" style={g.items.some(f => f.status === 'pendiente') ? null : { color: '#2e9e4f' }}>{eur(g.total)}</b><span className="muted">{open === id ? '▴' : '▾'}</span></button>
+      {open === id && <div className="cf-items">{g.items.map(f => { const late = f.subtype === 'fuera_plazo'; return <div key={f.id} className="cf-it">
+        <div className="row between" style={{ flexWrap: 'nowrap' }}><b>Entrenamiento del {f.weekday} {fmtDate(f.date, { day: 'numeric', month: 'numeric' })}</b><span className="cf-st" style={{ '--c': FST[f.status][1] }}>{FST[f.status][0]}</span></div>
+        <span className="cf-ty" style={{ '--c': late ? '#ef7d32' : '#d6262f' }}>{late ? 'RPE entregado fuera de plazo' : 'RPE no completado'}</span>
+        <ul>
+          {f.deadline && <li>Plazo para registrar el RPE: hasta el <b>{whenTxt(f.deadline)}</b> ({hTxt(c.fineHours)} después del aviso).</li>}
+          {late && f.rpe_at ? <li>Lo registró el <b>{whenTxt(f.rpe_at)}</b>{f.deadline ? `, ${hoursLate(f.rpe_at, f.deadline)} tarde` : ''}.</li> : <li>No ha registrado el RPE de esa sesión.</li>}
+          <li>Importe: <b>{eur(f.amount)}</b>{f.status === 'pagada' && f.resolved_at ? ` · pagada el ${madrid(f.resolved_at, { day: 'numeric', month: 'numeric' })}${f.paid_by ? ` (marcada por el ${f.paid_by})` : ''}` : ''}{f.status === 'anulada' ? ' · anulada por el preparador, no se cobra' : ''}.</li>
+          {f.note && <li>Nota del preparador: {f.note}</li>}
+        </ul>
+        {f.status === 'pendiente' && <button className="btn sm primary cf-pay" onClick={() => setConf(f)}>Marcar como pagada</button>}
+        {f.status === 'pagada' && String(f.paid_by || '').startsWith('capitán') && <button className="btn sm ghost cf-pay" onClick={() => pay(f, true)}>Deshacer cobro</button>}
+      </div>; })}</div>}
+    </div>)}
+    <p className="small muted" style={{ margin: 0 }}>Puedes marcar las multas como pagadas cuando las cobres. Anularlas solo puede hacerlo el preparador físico.</p>
+    {conf && <Modal title="Marcar como pagada" onClose={() => setConf(null)} footer={<><button className="btn" onClick={() => setConf(null)}>Cancelar</button><button className="btn primary" onClick={() => { pay(conf); setConf(null); }}>Sí, está pagada</button></>}>
+      <p style={{ margin: 0 }}><b>{conf.player_name}</b> ha pagado la multa de <b>{eur(conf.amount)}</b> del entrenamiento del {conf.weekday} {fmtDate(conf.date, { day: 'numeric', month: 'numeric' })}.</p>
+      <p className="small muted" style={{ marginBottom: 0 }}>El preparador verá que la has marcado tú. Si te equivocas, puedes deshacerlo.</p></Modal>}
   </div>;
 }
 

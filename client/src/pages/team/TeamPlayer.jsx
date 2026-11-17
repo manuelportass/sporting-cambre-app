@@ -22,7 +22,7 @@ export default function TeamPlayer() {
   if (s.error) return <ErrorBox error={s.error} />;
   const { player: p, availability } = s.data;
   return <div>
-    <PageHead back="/primer-equipo/jugadores" eyebrow={<span className="row" style={{ gap: 6 }}><span className="sdot" style={{ background: `var(--${AVAIL_COLOR[availability.code]})` }} />{availability.label}</span>} title={p.full_name}
+    <PageHead back="/primer-equipo/jugadores" eyebrow={<span className="row" style={{ gap: 6 }}><span className="sdot" style={{ background: `var(--${AVAIL_COLOR[availability.code]})` }} />{availability.label}</span>} title={<>{p.full_name}{p.is_captain ? <span className="cap-badge" title="Capitán">C</span> : null}</>}
       sub={[p.position, p.age !== null ? p.age + ' años' : null].filter(Boolean).join(' · ') || null}
       actions={ro ? null : <MoreMenu items={[{ label: 'Ficha general del jugador', onClick: () => nav('/jugadores/' + id) }, { label: 'Disponibilidad y observaciones', onClick: () => setTab('general') }]} />} />
     <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resumen', label: 'Resumen' }, { key: 'carga', label: 'Carga' }, { key: 'wellness', label: 'Wellness' }, { key: 'competicion', label: 'Partidos' }, { key: 'tests', label: 'Tests' }, { key: 'lesiones', label: `Lesiones${s.data.injuries.length ? ` (${s.data.injuries.length})` : ''}` }, { key: 'registros', label: 'Registros' }, { key: 'general', label: 'Ficha' }].filter(t => !ro || t.key !== 'lesiones')} />
@@ -363,11 +363,11 @@ function GeneralTab({ data, reload }) {
   const ro = useReadOnly();
   const p = data.player;
   const cur = p.availability === 'no_disponible' || p.availability === 'lesionado' ? 'lesionado' : p.availability === 'limitado' ? 'limitado' : 'disponible';
-  const [v, setV] = useState({ nickname: p.nickname || '', position: p.position || '', age: p.age_input ?? (p.birth_date ? '' : p.age ?? ''), dominant_leg: p.dominant_leg || '', sex: p.sex || '', availability: cur, notes: p.notes || '' });
+  const [v, setV] = useState({ nickname: p.nickname || '', position: p.position || '', age: p.age_input ?? (p.birth_date ? '' : p.age ?? ''), dominant_leg: p.dominant_leg || '', sex: p.sex || '', is_captain: !!p.is_captain, availability: cur, notes: p.notes || '' });
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
-    try { await api.put('/players/' + p.id, { nickname: v.nickname.trim() || null, position: v.position || null, dominant_leg: v.dominant_leg || null, sex: v.sex || null, availability: v.availability, notes: v.notes, private: { age: v.age === '' ? null : v.age } }); toast('Ficha guardada'); reload(); }
+    try { await api.put('/players/' + p.id, { is_captain: v.is_captain, nickname: v.nickname.trim() || null, position: v.position || null, dominant_leg: v.dominant_leg || null, sex: v.sex || null, availability: v.availability, notes: v.notes, private: { age: v.age === '' ? null : v.age } }); toast('Ficha guardada'); reload(); }
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   return <div className="grid g2" style={{ alignItems: 'start' }}>
@@ -377,6 +377,7 @@ function GeneralTab({ data, reload }) {
         <Field label="Posición"><select value={posGroup(v.position) || ''} onChange={e => setV({ ...v, position: e.target.value })}><option value="">—</option>{POSITIONS.map(x => <option key={x}>{x}</option>)}</select></Field>
         <Field label="Edad" hint={p.birth_date ? `por fecha de nacimiento: ${p.age} años` : 'años'}><input type="number" min="8" max="60" value={v.age} disabled={!!p.birth_date} placeholder={p.birth_date ? String(p.age) : ''} onChange={e => setV({ ...v, age: e.target.value })} /></Field>
       </div>
+      <label className="check cap-check"><input type="checkbox" checked={v.is_captain} onChange={e => setV({ ...v, is_captain: e.target.checked })} /> <span><b>Capitán del equipo</b> <span className="small muted">· podrá ver en su app las multas de todo el equipo, con sus motivos (solo consulta). Solo puede haber uno.</span></span></label>
       <div><span className="small" style={{ fontWeight: 600, color: 'var(--ink-2)' }}>Sexo <span className="muted" style={{ fontWeight: 400 }}>· para el VO₂máx estimado</span></span>
         <div className="segpick">{[['M', 'Masculino'], ['F', 'Femenino']].map(([k, l]) => <button key={k} type="button" className={v.sex === k ? 'on' : ''} onClick={() => setV({ ...v, sex: v.sex === k ? '' : k })}>{l}</button>)}</div></div>
       <div><span className="small" style={{ fontWeight: 600, color: 'var(--ink-2)' }}>Pierna dominante</span>

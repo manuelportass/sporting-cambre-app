@@ -399,6 +399,9 @@ if (!cols('fines').includes('subtype')) {
   db.exec("ALTER TABLE fines ADD COLUMN subtype TEXT NOT NULL DEFAULT 'no_completado'");
   db.exec('ALTER TABLE fines ADD COLUMN rpe_at TEXT');
 }
+// Capitán del equipo: puede consultar las multas del equipo desde su app
+if (!cols('fines').includes('paid_by')) db.exec('ALTER TABLE fines ADD COLUMN paid_by TEXT'); // quién la marcó como pagada (preparador o capitán)
+if (!cols('players').includes('is_captain')) db.exec('ALTER TABLE players ADD COLUMN is_captain INTEGER NOT NULL DEFAULT 0');
 // Apodo del jugador (saludo en su pantalla de inicio)
 if (!cols('players').includes('nickname')) db.exec('ALTER TABLE players ADD COLUMN nickname TEXT');
 if (!cols('team_sessions').includes('track_missing')) db.exec('ALTER TABLE team_sessions ADD COLUMN track_missing INTEGER DEFAULT 1');
