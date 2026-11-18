@@ -213,13 +213,15 @@ r.get('/season', h((req, res) => {
   const matches = db.prepare(`SELECT m.id, m.date, m.opponent, m.home_away, m.goals_for, m.goals_against FROM matches m
     WHERE m.season=? AND m.date<=? AND EXISTS (SELECT 1 FROM match_stats s WHERE s.match_id=m.id) ORDER BY m.date DESC`).all(season, t);
   const mine = new Map(db.prepare('SELECT ms.* FROM match_stats ms JOIN matches m ON m.id=ms.match_id WHERE ms.player_id=? AND m.season=?').all(pid(req), season).map(x => [x.match_id, x]));
-  const rows = matches.map(m => { const x = mine.get(m.id); return { date: m.date, opponent: m.opponent, home_away: m.home_away, result: m.goals_for !== null ? `${m.goals_for}–${m.goals_against}` : null,
+  // Si se incorporó con la temporada empezada, solo cuentan los partidos desde su llegada
+  const joined = db.prepare('SELECT joined_at FROM players WHERE id=?').get(pid(req))?.joined_at || null;
+  const rows = matches.filter(m => !joined || m.date >= joined || mine.has(m.id)).map(m => { const x = mine.get(m.id); return { date: m.date, opponent: m.opponent, home_away: m.home_away, result: m.goals_for !== null ? `${m.goals_for}–${m.goals_against}` : null,
     outcome: m.goals_for === null || m.goals_against === null ? null : m.goals_for > m.goals_against ? 'V' : m.goals_for < m.goals_against ? 'D' : 'E',
     called: !!x && x.called_up !== 0, started: x ? x.started : null, minutes: x?.minutes || 0, goals: x?.goals || 0, yellow: x?.yellow || 0, red: x?.red || 0 }; });
   const called = rows.filter(x => x.called);
   const tr = team.trainingAttendance(pid(req), t);
   res.json({
-    season, matchesTotal: rows.length,
+    season, joined_at: joined && joined > team.seasonStart(t) ? joined : null, matchesTotal: rows.length,
     called: called.length, played: rows.filter(x => x.minutes > 0).length,
     starter: called.filter(x => x.started === 1).length, sub: called.filter(x => x.started === 0).length,
     minutes: rows.reduce((a, x) => a + x.minutes, 0), minutesTotal: rows.length * 90,

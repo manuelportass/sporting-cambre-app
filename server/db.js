@@ -552,6 +552,32 @@ db.prepare('INSERT OR IGNORE INTO test_types(name,family,fields,protocol) VALUES
     db.prepare('UPDATE test_types SET fields=? WHERE id=?').run(JSON.stringify(f), t.id);
   }
 }
+// Y-Balance y movilidad también para el primer equipo (derecha / izquierda)
+{
+  const ins = db.prepare('INSERT OR IGNORE INTO test_types(name,family,fields,protocol) VALUES (?,?,?,?)');
+  ins.run('Y-Balance Test', 'equilibrio', JSON.stringify([
+    { key: 'long_d', label: 'Longitud pierna (D)', unit: 'cm', decimals: 1, better: null },
+    { key: 'long_i', label: 'Longitud pierna (I)', unit: 'cm', decimals: 1, better: null },
+    { key: 'ant_d', label: 'Anterior (D)', unit: 'cm', decimals: 1, better: 'higher' },
+    { key: 'ant_i', label: 'Anterior (I)', unit: 'cm', decimals: 1, better: 'higher' },
+    { key: 'pm_d', label: 'Posteromedial (D)', unit: 'cm', decimals: 1, better: 'higher' },
+    { key: 'pm_i', label: 'Posteromedial (I)', unit: 'cm', decimals: 1, better: 'higher' },
+    { key: 'pl_d', label: 'Posterolateral (D)', unit: 'cm', decimals: 1, better: 'higher' },
+    { key: 'pl_i', label: 'Posterolateral (I)', unit: 'cm', decimals: 1, better: 'higher' },
+    { key: 'comp_d', label: 'Puntuación compuesta (D)', unit: '%', decimals: 1, better: 'higher' },
+    { key: 'comp_i', label: 'Puntuación compuesta (I)', unit: '%', decimals: 1, better: 'higher' },
+  ]), 'Alcance en cm (mejor de 3 intentos válidos por dirección), descalzo, manos en la cadera. Longitud de la pierna: de la espina ilíaca anterosuperior al maléolo interno. La puntuación compuesta se calcula sola: (anterior + posteromedial + posterolateral) / (3 × longitud) × 100.');
+  ins.run('Movilidad', 'movilidad', JSON.stringify([
+    { key: 'rodilla_d', label: 'Flexión de rodilla (D)', unit: '°', decimals: 1, better: 'higher' },
+    { key: 'rodilla_i', label: 'Flexión de rodilla (I)', unit: '°', decimals: 1, better: 'higher' },
+    { key: 'wblt_d', label: 'Flexión dorsal tobillo · WBLT (D)', unit: '°', decimals: 1, better: 'higher' },
+    { key: 'wblt_i', label: 'Flexión dorsal tobillo · WBLT (I)', unit: '°', decimals: 1, better: 'higher' },
+    { key: 'cadera_act_d', label: 'Flexión de cadera activa (D)', unit: '°', decimals: 1, better: 'higher' },
+    { key: 'cadera_act_i', label: 'Flexión de cadera activa (I)', unit: '°', decimals: 1, better: 'higher' },
+    { key: 'cadera_pas_d', label: 'Flexión de cadera pasiva (D)', unit: '°', decimals: 1, better: 'higher' },
+    { key: 'cadera_pas_i', label: 'Flexión de cadera pasiva (I)', unit: '°', decimals: 1, better: 'higher' },
+  ]), 'Ángulos en grados, medidos con goniómetro o sobre una foto de lado (la foto no se guarda). WBLT: inclinación de la tibia respecto a la vertical con el talón apoyado.');
+}
 // Tests de salto: mejor salto + media de 3 saltos (análisis por vídeo o registro manual)
 for (const t of db.prepare("SELECT id, fields FROM test_types WHERE family='salto'").all()) {
   const f = JSON.parse(t.fields);

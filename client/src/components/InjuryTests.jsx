@@ -164,7 +164,7 @@ const GUIDE = {
   hip: ['Línea media del tronco (hombro/axila)', 'Trocánter mayor (cadera)', 'Epicóndilo lateral (rodilla)'],
   tibia: ['Maléolo (tobillo)', 'Tuberosidad tibial (rodilla)'],
 };
-function AngleTool({ mode, title, onClose, onDone }) {
+export function AngleTool({ mode, title, onClose, onDone }) {
   const [src, setSrc] = useState(null);
   const [nat, setNat] = useState(null);
   const [pts, setPts] = useState([]);

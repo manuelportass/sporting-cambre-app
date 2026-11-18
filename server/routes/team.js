@@ -203,6 +203,7 @@ r.get('/rpe-overview', h((req, res) => {
     const ses = db.prepare("SELECT * FROM team_sessions WHERE date=? AND session_type!='Partido' ORDER BY id LIMIT 1").get(date);
     const entries = [], missing = [];
     for (const p of players) {
+      if (p.joined_at && date < p.joined_at) continue; // aún no estaba en el equipo
       const e = db.prepare("SELECT * FROM load_entries WHERE player_id=? AND date=? AND kind='colectivo' AND status='valido' ORDER BY id DESC LIMIT 1").get(p.id, date);
       if (e) entries.push({ player_id: p.id, name: fullName(p), photo_file_id: p.photo_file_id, rpe: e.rpe, duration: e.duration_min, load: e.load_au, fill: e.notes === 'Relleno automático', notes: e.notes === 'Relleno automático' ? null : e.notes }); 
       else {
@@ -291,7 +292,10 @@ function lastTests(playerId) {
 const FILL = 'Relleno automático';
 function seasonStart(date) { const [a] = seasonOf(date).split('/'); return `${a}-07-01`; }
 function trainingAttendance(playerId, date, detail = false) {
-  const to = date < today() ? date : today(), from = seasonStart(date);
+  const to = date < today() ? date : today();
+  // Desde el inicio de temporada o, si llegó después, desde su incorporación al equipo
+  const joined = db.prepare('SELECT joined_at FROM players WHERE id=?').get(playerId)?.joined_at;
+  const from = joined && joined > seasonStart(date) ? joined : seasonStart(date);
   const ses = db.prepare("SELECT id, date FROM team_sessions WHERE session_type!='Partido' AND date BETWEEN ? AND ?").all(from, to);
   const real = new Set(db.prepare("SELECT date FROM load_entries WHERE player_id=? AND kind='colectivo' AND status='valido' AND COALESCE(description,'')!=? AND date BETWEEN ? AND ?").all(playerId, FILL, from, to).map(x => x.date));
   const att = new Map(db.prepare("SELECT a.session_id, a.status FROM team_attendance a JOIN team_sessions t ON t.id=a.session_id WHERE a.player_id=? AND t.date BETWEEN ? AND ?").all(playerId, from, to).map(x => [x.session_id, x.status]));
@@ -307,7 +311,9 @@ function trainingAttendance(playerId, date, detail = false) {
 }
 // Partidos jugados en la temporada: oficiales (con acta) y amistosos (histórico), según las cargas de partido
 function matchCount(playerId, date) {
-  const to = date < today() ? date : today(), from = seasonStart(date);
+  const to = date < today() ? date : today();
+  const joined = db.prepare('SELECT joined_at FROM players WHERE id=?').get(playerId)?.joined_at;
+  const from = joined && joined > seasonStart(date) ? joined : seasonStart(date); // desde su incorporación
   const rows = db.prepare("SELECT l.date, l.duration_min, l.session_type, l.match_id FROM load_entries l WHERE l.player_id=? AND l.kind='partido' AND l.status='valido' AND l.date BETWEEN ? AND ? ORDER BY l.date").all(playerId, from, to);
   const off = rows.filter(r => r.match_id || r.session_type !== 'Amistoso');
   return { played: rows.length, official: off.length, friendly: rows.length - off.length, minutes: rows.reduce((a, r) => a + (r.duration_min || 0), 0),
@@ -390,7 +396,7 @@ r.get('/players/:id/summary', h((req, res) => {
     FROM injuries i LEFT JOIN rehab_phases f ON f.id=i.phase_id WHERE i.player_id=? ORDER BY i.injury_date DESC`).all(p.id)
     .map(i => ({ ...i, status_label: STATUS_LABEL[i.status], days: L.diffDays(i.injury_date, i.closed_at || today()), pain: { ...painStats.get(i.id), last: lastPain.get(i.id) || null },
       entries: db.prepare('SELECT COUNT(*) n FROM injury_entries WHERE injury_id=?').get(i.id).n }));
-  const att = db.prepare(`SELECT t.date, t.session_type, a.status FROM team_sessions t LEFT JOIN team_attendance a ON a.session_id=t.id AND a.player_id=? WHERE t.date <= ? ORDER BY t.date DESC LIMIT 60`).all(p.id, today());
+  const att = db.prepare(`SELECT t.date, t.session_type, a.status FROM team_sessions t LEFT JOIN team_attendance a ON a.session_id=t.id AND a.player_id=? WHERE t.date <= ? AND t.date >= ? ORDER BY t.date DESC LIMIT 60`).all(p.id, today(), p.joined_at || '0000');
   const matches = db.prepare(`SELECT m.*, ms.minutes, ms.started, ms.goals, ms.assists, ms.yellow, ms.red, ms.called_up, ms.source AS stat_source
     FROM match_stats ms JOIN matches m ON m.id=ms.match_id WHERE ms.player_id=? ORDER BY m.date DESC`).all(p.id);
   const tests = db.prepare(`SELECT r.*, t.name, t.fields FROM test_results r JOIN test_types t ON t.id=r.test_type_id WHERE r.player_id=? ORDER BY r.date DESC`).all(p.id)
@@ -807,7 +813,7 @@ r.delete('/test-types/:id', h((req, res) => {
   res.json({ ok: true });
 }));
 r.get('/tests', h((req, res) => {
-  let sql = `SELECT r.*, t.name AS test_name, t.fields, p.first_name, p.last_name FROM test_results r JOIN test_types t ON t.id=r.test_type_id JOIN players p ON p.id=r.player_id WHERE 1=1`;
+  let sql = `SELECT r.*, t.name AS test_name, t.fields, p.first_name, p.last_name, p.photo_file_id FROM test_results r JOIN test_types t ON t.id=r.test_type_id JOIN players p ON p.id=r.player_id WHERE 1=1`;
   const p = {};
   if (req.query.type_id) { sql += ' AND r.test_type_id=@t'; p.t = Number(req.query.type_id); }
   if (req.query.player_id) { sql += ' AND r.player_id=@p'; p.p = Number(req.query.player_id); }
@@ -822,6 +828,11 @@ function cleanResult(b) {
   const fields = JSON.parse(type.fields);
   const values = {};
   for (const f of fields) values[f.key] = num(b.values?.[f.key], f.label, { min: -1e6, max: 1e6 });
+  // Y-Balance: puntuación compuesta de cada pierna = (anterior + posteromedial + posterolateral) / (3 × longitud) × 100
+  if (type.name === 'Y-Balance Test') for (const s of ['d', 'i']) {
+    const L = values['long_' + s], a = values['ant_' + s], pm = values['pm_' + s], pl = values['pl_' + s];
+    values['comp_' + s] = L && a != null && pm != null && pl != null ? Math.round((a + pm + pl) / (3 * L) * 1000) / 10 : null;
+  }
   // Perímetros: índice cintura-cadera calculado por el servidor
   if (type.name === 'Perímetros') values.icc = values.cintura && values.cadera ? Math.round(values.cintura / values.cadera * 100) / 100 : null;
   // 1RM estimado: siempre lo calcula el servidor con la fórmula de Brzycki (1993)

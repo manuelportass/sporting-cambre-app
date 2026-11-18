@@ -2,6 +2,8 @@ import PhotoCapture from '../../components/PhotoCapture';
 import { useReadOnly } from '../../App';
 import { LVChart, LV_TEST } from '../../components/SquatLab';
 import { linfit, loadFor, PCTS } from '../../lib/bar';
+import { delta, symmetry, viewOptions } from '../../lib/tests';
+import { Delta, Spark, Sym } from '../../components/TestViz';
 import { IFT, VO2_FIELD, VO2_NOTE, mergeVO2, vo2Detail } from '../../lib/vo2';
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -258,12 +260,24 @@ function TestsTab({ tests }) {
     <div className="grid g2">{byType.map(([name, list0]) => {
     const list = list0.map(mergeVO2);
     const fields = name === IFT ? [...list[0].fields, VO2_FIELD] : list[0].fields;
-    const chartFields = list[0].fields.filter(f => f.key !== 'etapa' || name !== IFT);
-    const data = [...list].reverse().map(r => ({ date: r.date, ...r.values }));
-    return <div key={name} className="card"><h3>{name}</h3>
-      {list.length >= 2 ? <MultiLine data={data} lines={chartFields.map(f => ({ key: f.key, label: `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}` }))} decimals={chartFields[0].decimals} height={180} /> : <p className="muted small">Se mostrará la evolución con al menos dos mediciones.</p>}
+    const opts = viewOptions(fields).filter(o => !(o.field && name === IFT && o.field.key === 'etapa'));
+    const last = list[0], prevOf = k => list.slice(1).find(r => r.values[k] != null);
+    return <div key={name} className="card pt-card">
+      <div className="row between" style={{ flexWrap: 'nowrap' }}><h3 style={{ margin: 0 }}>{name}</h3><span className="small muted">{fmtDate(last.date, { day: 'numeric', month: 'short', year: 'numeric' })} · {list.length} evaluaci{list.length === 1 ? 'ón' : 'ones'}</span></div>
+      <div className="pt-tiles">{opts.map(o => {
+        if (o.field) { const f = o.field, v = last.values[f.key], pr = prevOf(f.key); if (v == null) return null;
+          return <div key={o.id} className="pt-tile"><small>{f.virtual ? 'VO₂máx estimado' : f.label}</small><b>{fmtNum(v, f.decimals)}<span>{f.unit ? ` ${f.unit}` : ''}</span></b>
+            <Delta dl={delta(v, pr?.values[f.key], f.better)} decimals={f.decimals} unit={f.unit} /><Spark values={[...list].reverse().map(r => r.values[f.key])} w={110} /></div>; }
+        const { d, i } = o.pair, vd = last.values[d.key], vi = last.values[i.key]; if (vd == null && vi == null) return null;
+        const sym = symmetry(vd, vi);
+        return <div key={o.id} className="pt-tile pair"><small>{o.label}</small>
+          <div className="pt-di"><span><em>D</em><b>{fmtNum(vd, d.decimals)}</b></span><span><em>I</em><b>{fmtNum(vi, i.decimals)}</b></span><span className="muted">{d.unit}</span></div>
+          <Sym v={sym} /><Spark values={[...list].reverse().map(r => symmetry(r.values[d.key], r.values[i.key]))} w={110} color="#2a78d6" /></div>;
+      })}</div>
+      <details className="pt-more"><summary>Ver todas las mediciones</summary>
       <div className="table-wrap"><table className="t small"><thead><tr><th>Fecha</th>{fields.map(f => <th key={f.key} className="n">{f.virtual ? <>VO₂máx <i>estimado</i></> : f.label} {f.unit && `(${f.unit})`}</th>)}<th>Dispositivo</th></tr></thead>
         <tbody>{list.map((r, k) => { const prev = list[k + 1]; return <tr key={r.id}><td>{fmtDate(r.date)}</td>{fields.map(f => { const v = r.values[f.key], pv = prev?.values[f.key]; const diff = v != null && pv != null ? v - pv : null; return <td key={f.key} className="n" title={f.virtual ? vo2Detail(r.vo2) : undefined}>{f.virtual && v == null ? <span className="muted">falta dato</span> : fmtNum(v, f.decimals)}{diff !== null && <span className="muted"> ({diff > 0 ? '+' : ''}{fmtNum(diff, f.decimals)})</span>}</td>; })}<td>{r.device || '—'}</td></tr>; })}</tbody></table></div>
+      </details>
     </div>;
   })}</div></div>;
 }
@@ -363,16 +377,17 @@ function GeneralTab({ data, reload }) {
   const ro = useReadOnly();
   const p = data.player;
   const cur = p.availability === 'no_disponible' || p.availability === 'lesionado' ? 'lesionado' : p.availability === 'limitado' ? 'limitado' : 'disponible';
-  const [v, setV] = useState({ nickname: p.nickname || '', position: p.position || '', age: p.age_input ?? (p.birth_date ? '' : p.age ?? ''), dominant_leg: p.dominant_leg || '', sex: p.sex || '', is_captain: !!p.is_captain, availability: cur, notes: p.notes || '' });
+  const [v, setV] = useState({ joined_at: p.joined_at || '', nickname: p.nickname || '', position: p.position || '', age: p.age_input ?? (p.birth_date ? '' : p.age ?? ''), dominant_leg: p.dominant_leg || '', sex: p.sex || '', is_captain: !!p.is_captain, availability: cur, notes: p.notes || '' });
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
-    try { await api.put('/players/' + p.id, { is_captain: v.is_captain, nickname: v.nickname.trim() || null, position: v.position || null, dominant_leg: v.dominant_leg || null, sex: v.sex || null, availability: v.availability, notes: v.notes, private: { age: v.age === '' ? null : v.age } }); toast('Ficha guardada'); reload(); }
+    try { await api.put('/players/' + p.id, { joined_at: v.joined_at || null, is_captain: v.is_captain, nickname: v.nickname.trim() || null, position: v.position || null, dominant_leg: v.dominant_leg || null, sex: v.sex || null, availability: v.availability, notes: v.notes, private: { age: v.age === '' ? null : v.age } }); toast('Ficha guardada'); reload(); }
     catch (e) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   return <div className="grid g2" style={{ alignItems: 'start' }}>
     <fieldset disabled={ro} className="card stack ro-fs"><h3>Ficha del jugador</h3>
       <div className="inline-fields">
+        <Field label="Incorporación al equipo" hint="si llegó con la temporada empezada"><input type="date" value={v.joined_at} onChange={e => setV({ ...v, joined_at: e.target.value })} /></Field>
         <Field label="Apodo" hint="saludo de su app"><input type="text" maxLength={40} value={v.nickname} placeholder={(p.first_name || '').split(' ')[0]} onChange={e => setV({ ...v, nickname: e.target.value })} /></Field>
         <Field label="Posición"><select value={posGroup(v.position) || ''} onChange={e => setV({ ...v, position: e.target.value })}><option value="">—</option>{POSITIONS.map(x => <option key={x}>{x}</option>)}</select></Field>
         <Field label="Edad" hint={p.birth_date ? `por fecha de nacimiento: ${p.age} años` : 'años'}><input type="number" min="8" max="60" value={v.age} disabled={!!p.birth_date} placeholder={p.birth_date ? String(p.age) : ''} onChange={e => setV({ ...v, age: e.target.value })} /></Field>

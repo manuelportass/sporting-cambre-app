@@ -5,7 +5,10 @@ import { ColorBadge, Confirm, Empty, ErrorBox, Field, FileButton, ListRow, Loadi
 import { MultiLine } from '../../components/charts';
 import InjuryTestsTab from '../../components/InjuryTests';
 import { saveBlob } from '../../lib/files';
-import { INJ_COLOR, INJ_STATUS, fmtDate, fmtDateTime, todayISO } from '../../lib/format';
+import { INJ_COLOR, INJ_STATUS, fmtDate, fmtDateTime, fmtNum, todayISO } from '../../lib/format';
+
+// Descripción del dolor según la EVA
+const evaText = v => (v === 0 ? 'Sin dolor' : v <= 3 ? 'Leve' : v <= 6 ? 'Moderado' : v <= 9 ? 'Intenso' : 'El peor imaginable');
 
 export default function InjuryDetail() {
   const { id } = useParams();
@@ -56,11 +59,22 @@ export default function InjuryDetail() {
           painData.length >= 2 ? <MultiLine data={painData} lines={[{ key: 'pain', label: 'EVA' }]} yDomain={[0, 10]} decimals={0} height={180} /> : <p className="small" style={{ marginBottom: 0 }}>EVA {lastPain.eva} el {fmtDate(lastPain.date)}: «{lastPain.notes}»</p>}
       </div>
     </div>}
-    {tab === 'dolor' && (!i.pain.length ? <Empty title="Sin registros de dolor">El jugador lo registra desde su cuenta, en «Dolor (EVA)», después de cada sesión.</Empty> :
-      <div className="list">{i.pain.map(e => <div key={e.id} className="lrow" style={{ cursor: 'default' }}>
-        <span className="evab" style={{ background: evaColor(e.eva) }}>{e.eva}</span>
-        <span className="lrow-main"><span className="lrow-t">{fmtDate(e.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span><span className="lrow-s">{e.notes}</span></span>
-        <span className="small muted">{fmtDateTime(e.created_at)}</span><button className="btn sm ghost del" aria-label="Eliminar registro de dolor" title="Eliminar" onClick={() => setModal({ delPain: e })}>🗑</button></div>)}</div>)}
+    {tab === 'dolor' && (!i.pain.length ? <Empty title="Sin registros de dolor">El jugador lo registra desde su cuenta, en «EVA lesión», después de cada sesión.</Empty> : <div className="stack" style={{ gap: 12 }}>
+      <div className="eva-kpis">
+        <div style={{ '--c': evaColor(lastPain.eva) }}><small>Último</small><b>{lastPain.eva}</b><span>{evaText(lastPain.eva)} · {fmtDate(lastPain.date, { day: 'numeric', month: 'short' })}</span></div>
+        <div><small>Media</small><b>{fmtNum(i.pain.reduce((a, e) => a + e.eva, 0) / i.pain.length, 1)}</b><span>{i.pain.length} registro{i.pain.length === 1 ? '' : 's'}</span></div>
+        <div><small>Máximo</small><b>{Math.max(...i.pain.map(e => e.eva))}</b><span>{fmtDate(i.pain.reduce((m, e) => (e.eva > m.eva ? e : m), i.pain[0]).date, { day: 'numeric', month: 'short' })}</span></div>
+        {i.pain.length >= 2 && <div><small>Tendencia</small><b>{i.pain[0].eva < i.pain[1].eva ? '▼' : i.pain[0].eva > i.pain[1].eva ? '▲' : '='}</b><span>{i.pain[0].eva < i.pain[1].eva ? 'Menos dolor que la vez anterior' : i.pain[0].eva > i.pain[1].eva ? 'Más dolor que la vez anterior' : 'Igual que la vez anterior'}</span></div>}
+      </div>
+      {painData.length >= 2 && <div className="card"><MultiLine data={painData} lines={[{ key: 'pain', label: 'EVA' }]} yDomain={[0, 10]} decimals={0} height={170} /></div>}
+      <div className="eva-list">{i.pain.map(e => <div key={e.id} className="card eva-it">
+        <span className="eva-big" style={{ background: evaColor(e.eva) }}><b>{e.eva}</b><small>/10</small></span>
+        <div className="eva-body">
+          <div className="row between" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}><div><b className="eva-d">{fmtDate(e.date, { weekday: 'long', day: 'numeric', month: 'long' })}</b><div className="small muted">Dolor {evaText(e.eva).toLowerCase()} · enviado {fmtDateTime(e.created_at)}</div></div>
+            <button className="btn sm ghost del" aria-label="Eliminar registro de dolor" title="Eliminar" onClick={() => setModal({ delPain: e })}>🗑</button></div>
+          <p className="eva-notes">{e.notes || <span className="muted">Sin observaciones.</span>}</p>
+        </div></div>)}</div>
+    </div>)}
     {tab === 'seguimiento' && (!i.entries.length ? <Empty title="Sin entradas de seguimiento">Pulsa «+ Seguimiento» para registrar la primera sesión.</Empty> :
       <div className="list">{i.entries.map(e => <ListRow key={e.id} onClick={() => setModal({ entry: e })} title={fmtDate(e.date, { weekday: 'short', day: 'numeric', month: 'short' })}
         sub={[e.exercises.map(x => x.name).join(', '), e.response].filter(Boolean).join(' · ') || 'Sin detalle'}

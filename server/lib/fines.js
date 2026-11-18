@@ -48,6 +48,7 @@ function eligible(date, noticeAt) {
   return db.prepare(`SELECT p.id AS player_id, u.id AS user_id, p.first_name, p.last_name FROM users u
       JOIN players p ON p.id=u.player_id JOIN categories c ON c.id=p.category_id
     WHERE u.role='player' AND u.active=1 AND p.active=1 AND c.code='senior' AND u.created_at <= @notice
+      AND (p.joined_at IS NULL OR p.joined_at <= @d)
       AND NOT EXISTS (SELECT 1 FROM injuries i WHERE i.player_id=p.id AND i.injury_date <= @d
         AND (i.status!='completada' OR (i.closed_at IS NOT NULL AND substr(i.closed_at,1,10) >= @d)))
       AND NOT EXISTS (SELECT 1 FROM team_attendance a JOIN team_sessions t ON t.id=a.session_id

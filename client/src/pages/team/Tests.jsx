@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { api } from '../../api';
-import { Confirm, Empty, ErrorBox, Field, Loading, Modal, PageHead, Tabs, useApi, useToast } from '../../components/ui';
+import { Avatar, Confirm, Empty, ErrorBox, Field, Loading, Modal, PageHead, Seg, Tabs, useApi, useToast } from '../../components/ui';
 import { MultiLine } from '../../components/charts';
 import { exportCSV, exportXLSX } from '../../lib/files';
 import { fmtDate, fmtNum, todayISO } from '../../lib/format';
@@ -9,18 +9,23 @@ import JumpLab from '../../components/JumpLab';
 import { useReadOnly } from '../../App';
 import SquatLab, { LV_TEST, RM_TEST } from '../../components/SquatLab';
 import { VO2_NOTE, isIFT, mergeVO2, vo2Detail, withVO2 } from '../../lib/vo2';
+import { FAMILY, FAMILY_ORDER, defaultOption, delta, inputFields, symmetry, viewOptions } from '../../lib/tests';
+import { Delta, DuoBar, Spark, Sym } from '../../components/TestViz';
+import { AngleTool } from '../../components/InjuryTests';
 
 export default function Tests() {
   const types = useApi('/team/test-types');
   const [typeId, setTypeId] = useState(null);
   const ro = useReadOnly();
-  const [tab, setTab] = useState(ro ? 'historial' : 'registrar');
+  const [tab, setTab] = useState('resultados');
   useEffect(() => { if (types.data?.length && !types.data.find(t => t.id === typeId)) setTypeId((types.data.find(isIFT) || types.data[0]).id); }, [types.data, typeId]);
   const type = types.data?.find(t => t.id === typeId);
   return <div>
-    <PageHead back="/primer-equipo" title="Tests físicos" actions={types.data && tab !== 'configurar' && <select value={typeId || ''} onChange={e => setTypeId(Number(e.target.value))} aria-label="Test" style={{ width: 'auto' }}>{types.data.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>} />
-    <Tabs value={tab} onChange={setTab} tabs={ro ? [{ key: 'historial', label: 'Historial' }, { key: 'comparar', label: 'Evolución' }] : [{ key: 'registrar', label: 'Registrar' }, { key: 'historial', label: 'Historial' }, { key: 'comparar', label: 'Evolución' }, { key: 'configurar', label: 'Configurar' }]} />
+    <PageHead back="/primer-equipo" title="Tests físicos" />
+    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resultados', label: 'Resultados' }, ...(ro ? [] : [{ key: 'registrar', label: 'Registrar' }]), { key: 'comparar', label: 'Evolución' }, { key: 'historial', label: 'Tabla' }, ...(ro ? [] : [{ key: 'configurar', label: 'Configurar' }])]} />
+    {types.data && tab !== 'configurar' && <TestPicker types={types.data} value={typeId} onChange={setTypeId} />}
     {types.loading ? <Loading /> : <>
+      {tab === 'resultados' && type && <Results key={type.id} type={type} />}
       {tab === 'registrar' && !ro && type && <Register type={type} types={types.data} />}
       {tab === 'historial' && type && <History type={type} />}
       {tab === 'comparar' && type && <Compare type={type} />}
@@ -29,11 +34,85 @@ export default function Tests() {
   </div>;
 }
 
+// Selector de test: fichas agrupadas por familia
+function TestPicker({ types, value, onChange }) {
+  const fams = FAMILY_ORDER.map(f => [f, types.filter(t => (FAMILY[t.family] ? t.family : 'otro') === f)]).filter(([, l]) => l.length);
+  return <div className="tpick">{fams.map(([f, l]) => <div key={f} className="tp-fam"><span>{FAMILY[f]}</span>
+    <div>{l.map(t => <button key={t.id} className={t.id === value ? 'on' : ''} onClick={() => onChange(t.id)}>{t.name}</button>)}</div></div>)}</div>;
+}
+
+// Resultados: test → retest de cada jugador, de un vistazo
+function Results({ type: baseType }) {
+  const type = withVO2(baseType);
+  const l = useApi('/team/tests?type_id=' + type.id);
+  const opts = useMemo(() => viewOptions(type.fields), [type]);
+  const [optId, setOptId] = useState(() => defaultOption(type, opts));
+  const [sort, setSort] = useState('valor');
+  const o = opts.find(x => x.id === optId) || opts[0];
+  const data = useMemo(() => (l.data || []).map(mergeVO2), [l.data]);
+  if (l.loading && !l.data) return <Loading />;
+  if (l.error) return <ErrorBox error={l.error} retry={l.reload} />;
+  if (!data.length) return <Empty title="Todavía no hay resultados de este test">Regístralos en la pestaña «Registrar».</Empty>;
+  const byP = new Map();
+  for (const r of data) { if (!byP.has(r.player_id)) byP.set(r.player_id, { id: r.player_id, name: r.player_name, photo: r.photo_file_id, list: [] }); byP.get(r.player_id).list.push(r); }
+  const dec = (o.field || o.pair).decimals, unit = (o.field || o.pair).unit, better = (o.field || o.pair).better;
+  let rows;
+  if (o.field) {
+    const k = o.field.key;
+    rows = [...byP.values()].map(p => { const h = p.list.filter(r => r.values[k] != null); return h.length ? { ...p, cur: h[0].values[k], prev: h[1]?.values[k] ?? null, date: h[0].date, prevDate: h[1]?.date, n: h.length, spark: h.map(r => r.values[k]).reverse() } : null; }).filter(Boolean);
+    rows.forEach(r => { r.dl = delta(r.cur, r.prev, better); });
+  } else {
+    const { d, i } = o.pair;
+    rows = [...byP.values()].map(p => { const h = p.list.filter(r => r.values[d.key] != null || r.values[i.key] != null); if (!h.length) return null;
+      const L = h[0], P = h[1]; return { ...p, d: L.values[d.key], i: L.values[i.key], pd: P?.values[d.key] ?? null, pi: P?.values[i.key] ?? null, date: L.date, prevDate: P?.date, n: h.length,
+        sym: symmetry(L.values[d.key], L.values[i.key]), psym: P ? symmetry(P.values[d.key], P.values[i.key]) : null, spark: h.map(r => symmetry(r.values[d.key], r.values[i.key])).reverse() }; }).filter(Boolean);
+    rows.forEach(r => { r.cur = r.d != null && r.i != null ? (r.d + r.i) / 2 : r.d ?? r.i; r.dd = delta(r.d, r.pd, better); r.di = delta(r.i, r.pi, better); r.dl = delta(r.sym, r.psym, 'higher'); });
+  }
+  const sorters = { valor: (a, b) => (better === 'lower' ? a.cur - b.cur : b.cur - a.cur), mejora: (a, b) => (b.dl?.tone === 'up' ? 1 : 0) - (a.dl?.tone === 'up' ? 1 : 0) || ((b.dl?.pct ?? -1e9) * (better === 'lower' ? -1 : 1)) - ((a.dl?.pct ?? -1e9) * (better === 'lower' ? -1 : 1)), nombre: (a, b) => a.name.localeCompare(b.name) };
+  rows.sort(sorters[sort]);
+  const max = Math.max(...rows.flatMap(r => o.field ? [r.cur, r.prev] : [r.d, r.i, r.pd, r.pi]).filter(v => v != null), 0);
+  const withPrev = rows.filter(r => r.dl);
+  const avg = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const lastDate = rows.reduce((m, r) => (r.date > m ? r.date : m), '');
+  const teamCur = avg(rows.map(r => o.field ? r.cur : r.sym).filter(v => v != null)), teamPrev = avg(withPrev.map(r => o.field ? r.prev : r.psym).filter(v => v != null));
+  const up = withPrev.filter(r => r.dl.tone === 'up').length, down = withPrev.filter(r => r.dl.tone === 'down').length;
+  return <div className="stack" style={{ gap: 12 }}>
+    {opts.length > 1 && <div className="vopts">{opts.map(x => <button key={x.id} className={x.id === o.id ? 'on' : ''} onClick={() => setOptId(x.id)}>{x.label}{x.pair ? ' · D/I' : ''}</button>)}</div>}
+    <div className="rs-kpis">
+      <div><small>{o.field ? 'Media del equipo' : 'Simetría media D/I'}</small><b>{teamCur == null ? '—' : fmtNum(teamCur, o.field ? dec : 0)}<span>{o.field ? (unit ? ` ${unit}` : '') : ' %'}</span></b>
+        {teamPrev != null && <Delta dl={delta(teamCur, teamPrev, o.field ? better : 'higher')} decimals={o.field ? dec : 0} unit={o.field ? unit : 'pts'} pct={!!o.field} />}</div>
+      <div><small>Última evaluación</small><b className="rs-date">{fmtDate(lastDate, { day: 'numeric', month: 'short', year: 'numeric' })}</b><span className="small muted">{rows.length} jugador{rows.length === 1 ? '' : 'es'} evaluado{rows.length === 1 ? '' : 's'}</span></div>
+      <div><small>Respecto a su test anterior</small><b className="rs-ud"><span className="up">▲ {up}</span> <span className="down">▼ {down}</span></b><span className="small muted">{withPrev.length ? `${withPrev.length} con retest` : 'Aún no hay retest'}</span></div>
+    </div>
+    <div className="card rs-card">
+      <div className="row between" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>{o.label}{unit ? ` (${unit})` : ''} · test → retest</h3>
+        <Seg value={sort} onChange={setSort} options={[{ value: 'valor', label: 'Mejor valor' }, { value: 'mejora', label: 'Más mejora' }, { value: 'nombre', label: 'A–Z' }]} /></div>
+      {o.field ? <div className="rs-list">{rows.map(r => <div key={r.id} className="rs-row">
+        <span className="rs-who"><Avatar name={r.name} fileId={r.photo} /><span><b>{r.name}</b><small>{fmtDate(r.date, { day: 'numeric', month: 'short' })}{r.prevDate ? ` · antes ${fmtDate(r.prevDate, { day: 'numeric', month: 'short' })}` : ''}</small></span></span>
+        <span className="rs-vals">{r.prev != null && <span className="rs-prev">{fmtNum(r.prev, dec)} →</span>}<b>{fmtNum(r.cur, dec)}</b></span>
+        <DuoBar prev={r.prev} cur={r.cur} max={max} tone={r.dl?.tone} />
+        <Delta dl={r.dl} decimals={dec} unit={unit} />
+        <Spark values={r.spark} />
+      </div>)}</div> :
+      <div className="rs-list">{rows.map(r => <div key={r.id} className="rs-row pair">
+        <span className="rs-who"><Avatar name={r.name} fileId={r.photo} /><span><b>{r.name}</b><small>{fmtDate(r.date, { day: 'numeric', month: 'short' })}{r.prevDate ? ` · antes ${fmtDate(r.prevDate, { day: 'numeric', month: 'short' })}` : ''}</small></span></span>
+        <span className="rs-side"><small>Derecha</small><b>{fmtNum(r.d, dec)}</b><Delta dl={r.dd} decimals={dec} pct={false} /></span>
+        <span className="rs-side"><small>Izquierda</small><b>{fmtNum(r.i, dec)}</b><Delta dl={r.di} decimals={dec} pct={false} /></span>
+        <span className="rs-lr"><span className="lr-bar"><i style={{ width: (r.d != null && max ? r.d / max * 100 : 0) + '%' }} /></span><span className="lr-bar i"><i style={{ width: (r.i != null && max ? r.i / max * 100 : 0) + '%' }} /></span></span>
+        <Sym v={r.sym} />
+      </div>)}</div>}
+      <p className="small muted" style={{ margin: '8px 0 0' }}>{o.field ? <>Gris: test anterior · color: último. <span className="dlt up">▲ mejora</span> <span className="dlt down">▼ empeora</span>{!better && ' (en este dato no hay «mejor» ni «peor»)'}.</> : <><span style={{ color: '#e30613' }}>■</span> derecha · <span style={{ color: '#2a78d6' }}>■</span> izquierda · Simetría = lado menor / lado mayor × 100 · <span style={{ color: '#2e9e4f' }}>●</span> ≥ 90 % · <span style={{ color: '#ef7d32' }}>●</span> 80–89 % · <span style={{ color: '#d6262f' }}>●</span> &lt; 80 %.</>}</p>
+    </div>
+  </div>;
+}
+
 function Register({ type, types }) {
   const [jl, setJl] = useState(false);
   const [sq, setSq] = useState(false);
   const isSquat = type.name === RM_TEST || type.name === LV_TEST;
-  const inFields = type.name === RM_TEST ? type.fields.filter(f => f.key !== 'rm') : type.name === 'Perímetros' ? type.fields.filter(f => f.key !== 'icc') : type.fields;
+  const inFields = inputFields(type);
+  const [angle, setAngle] = useState(null); // { pid, key, mode, title } para medir un ángulo con foto (Movilidad)
+  const angleMode = k => (k.startsWith('rodilla') ? 'knee' : k.startsWith('wblt') ? 'tibia' : k.startsWith('cadera') ? 'hip' : null);
   const toast = useToast();
   const players = useApi('/players?category=senior');
   const [meta, setMeta] = useState({ date: todayISO(), device: '', protocol: type.protocol || '', conditions: '' });
@@ -59,6 +138,9 @@ function Register({ type, types }) {
     {isSquat && <div className="card jl-cta"><span className="jl-ico">🏋️</span><div style={{ flex: 1 }}><b>Sentadilla: 1RM y velocidad con vídeo</b><div className="small muted">Registra el 1RM estimado (Brzycki) y graba la sentadilla al 20, 40, 60 y 80 % del 1RM: se mide la velocidad de la barra y se dibuja la curva carga–velocidad.</div></div>
       <button className="btn primary" onClick={() => setSq(true)}>Abrir</button></div>}
     {sq && <SquatLab types={types} onClose={() => setSq(false)} />}
+    {type.name === 'Movilidad' && <div className="alert info small"><span>ⓘ</span><div>Escribe los ángulos o pulsa 📷 en cualquier casilla para medirlo sobre una foto de lado (tocando los puntos de referencia). La foto no se guarda.</div></div>}
+    {type.name === 'Y-Balance Test' && <div className="alert info small"><span>ⓘ</span><div>La puntuación compuesta de cada pierna se calcula sola al guardar: (anterior + posteromedial + posterolateral) / (3 × longitud de la pierna) × 100.</div></div>}
+    {angle && <AngleTool mode={angle.mode} title={angle.title} onClose={() => setAngle(null)} onDone={a => { setVals(o => ({ ...o, [angle.pid]: { ...o[angle.pid], [angle.key]: String(Math.round(a * 10) / 10) } })); setAngle(null); }} />}
     {type.name === 'Perímetros' && <div className="alert info small"><span>ⓘ</span><div>El índice cintura-cadera se calcula solo al guardar (cintura / cadera). Puedes dejar en blanco los perímetros que no midas.</div></div>}
     {type.name === RM_TEST && <div className="alert info small"><span>ⓘ</span><div>El 1RM estimado se calcula solo al guardar: 1RM = peso / (1,0278 − 0,0278 × repeticiones) (Brzycki, 1993). Entre 1 y 10 repeticiones.</div></div>}
     <div className="card"><div className="row"><Field label="Fecha" required><input type="date" value={meta.date} onChange={e => setMeta({ ...meta, date: e.target.value })} /></Field></div>
@@ -68,7 +150,7 @@ function Register({ type, types }) {
     </div><Field label="Protocolo" style={{ marginTop: 12 }}><textarea value={meta.protocol} onChange={e => setMeta({ ...meta, protocol: e.target.value })} /></Field></details></div>
     {players.loading ? <Loading /> : !players.data?.length ? <Empty title="No hay jugadores en el primer equipo" /> :
       <div className="table-wrap"><table className="t"><thead><tr><th>Jugador</th>{inFields.map(f => <th key={f.key}>{f.label}{f.unit ? ` (${f.unit})` : ''}</th>)}<th>Observaciones</th></tr></thead>
-        <tbody>{players.data.map(p => <tr key={p.id}><td><b>{p.full_name}</b></td>{inFields.map(f => <td key={f.key}><input type="number" step={Math.pow(10, -f.decimals)} value={vals[p.id]?.[f.key] ?? ''} onChange={e => setVals(o => ({ ...o, [p.id]: { ...o[p.id], [f.key]: e.target.value } }))} style={{ maxWidth: 120 }} /></td>)}
+        <tbody>{players.data.map(p => <tr key={p.id}><td><b>{p.full_name}</b></td>{inFields.map(f => <td key={f.key}><span className="cin"><input type="number" step={Math.pow(10, -f.decimals)} value={vals[p.id]?.[f.key] ?? ''} onChange={e => setVals(o => ({ ...o, [p.id]: { ...o[p.id], [f.key]: e.target.value } }))} style={{ maxWidth: 120 }} />{type.name === 'Movilidad' && angleMode(f.key) && <button type="button" className="btn sm ghost cam-in" title="Medir con foto" onClick={() => setAngle({ pid: p.id, key: f.key, mode: angleMode(f.key), title: `${f.label} · ${p.full_name}` })}>📷</button>}</span></td>)}
           <td><input type="text" value={vals[p.id]?.__notes ?? ''} onChange={e => setVals(o => ({ ...o, [p.id]: { ...o[p.id], __notes: e.target.value } }))} /></td></tr>)}</tbody></table></div>}
     {isIFT(type) && <div className="alert info small"><span>ⓘ</span><div>Al guardar, la app calcula automáticamente el <b>VO₂máx estimado</b> de cada jugador. {VO2_NOTE} El peso usado es el registro de «Peso corporal» más cercano a la fecha del test.</div></div>}
     <ErrorBox error={err} />
@@ -185,7 +267,7 @@ function TypeForm({ t, onClose, onSaved }) {
       try { if (t.id) await api.put('/team/test-types/' + t.id, v); else await api.post('/team/test-types', v); toast('Test guardado'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
     }}>Guardar</button></>}>
     <div className="inline-fields"><Field label="Nombre" required><input type="text" value={v.name} onChange={e => setV({ ...v, name: e.target.value })} /></Field>
-      <Field label="Familia"><select value={v.family} onChange={e => setV({ ...v, family: e.target.value })}>{['resistencia', 'salto', 'sprint', 'fuerza', 'movilidad', 'antropometria', 'otro'].map(x => <option key={x}>{x}</option>)}</select></Field></div>
+      <Field label="Familia"><select value={v.family} onChange={e => setV({ ...v, family: e.target.value })}>{['resistencia', 'salto', 'sprint', 'fuerza', 'equilibrio', 'movilidad', 'antropometria', 'otro'].map(x => <option key={x}>{x}</option>)}</select></Field></div>
     <Field label="Protocolo por defecto" style={{ marginTop: 12 }}><textarea value={v.protocol || ''} onChange={e => setV({ ...v, protocol: e.target.value })} /></Field>
     <h3 style={{ margin: '14px 0 8px' }}>Campos</h3>
     <div className="table-wrap"><table className="t"><thead><tr><th>Clave</th><th>Nombre</th><th>Unidad</th><th>Decimales</th><th>Interpretación</th><th /></tr></thead>

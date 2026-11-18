@@ -23,7 +23,7 @@ export function TeamWellness() {
   const items = st.data?.wellness.items || [];
   const day = (w.data || []).filter(x => x.date === date);
   const byPlayer = new Map(day.map(x => [x.player_id, x]));
-  const rows = (players.data || []).map(p => ({ p, e: byPlayer.get(p.id) })).sort((a, b) => (a.e ? 0 : 1) - (b.e ? 0 : 1) || (a.e?.summary.total ?? 0) - (b.e?.summary.total ?? 0));
+  const rows = (players.data || []).filter(p => !p.joined_at || p.joined_at <= date).map(p => ({ p, e: byPlayer.get(p.id) })).sort((a, b) => (a.e ? 0 : 1) - (b.e ? 0 : 1) || (a.e?.summary.total ?? 0) - (b.e?.summary.total ?? 0));
   const answered = rows.filter(r => r.e), missing = rows.filter(r => !r.e);
   const avg = answered.length ? Math.round(answered.reduce((a, r) => a + (r.e.summary.total ?? 0), 0) / answered.length) : null;
   const itemAvg = items.map(it => { const v = answered.map(r => r.e.summary.items.find(i => i.key === it.key)?.pct).filter(x => x != null); return { ...it, pct: v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null }; });

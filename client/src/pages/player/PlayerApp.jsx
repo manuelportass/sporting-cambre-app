@@ -362,6 +362,7 @@ function Season() {
   if (r.error) return <ErrorBox error={r.error} />;
   const d = r.data, tr = d.trainings;
   return <div className="stack" style={{ gap: 12 }}>
+    {d.joined_at && <div className="small muted" style={{ textAlign: 'center' }}>Contando desde tu incorporación al equipo, el {fmtDate(d.joined_at, { day: 'numeric', month: 'long' })}.</div>}
     <div className="card ring-row">
       <Ring value={d.minutes} total={d.minutesTotal} label="minutos" sub={d.minutesTotal ? `${Math.round((d.minutes / d.minutesTotal) * 100)} % de los minutos posibles` : 'Aún no hay partidos con acta'} />
       <Ring value={tr.attended} total={tr.total} label="entrenos" color={pctColor(tr.pct)} sub={tr.pct === null ? 'Sin entrenamientos' : `${tr.pct} % de asistencia`} />
