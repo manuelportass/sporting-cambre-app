@@ -1136,3 +1136,31 @@ ul.refs li { margin: 4px 0; }
 @media (max-aspect-ratio: 9/16) { .intro img { width: 100%; height: auto; } }
 @media (max-width: 600px) { .intro img { width: 100%; height: 100%; object-fit: cover; } }
 @media (min-width: 601px) { .intro img { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 18%, #000 82%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 18%, #000 82%, transparent 100%); } }
+/* iPhone: sin el botón gris de reproducción mientras la intro decide si usar el vídeo o la imagen animada */
+.intro video::-webkit-media-controls-start-playback-button { display: none !important; -webkit-appearance: none; }
+.intro video::-webkit-media-controls { display: none !important; }
+/* Vídeo fuera de la vista pero sin ocultarlo del todo: Safari (iPhone) deja de preparar fotogramas de un vídeo con display:none */
+.jl-stage.jl-off { position: absolute !important; left: -10000px; top: 0; width: 320px; opacity: 0; pointer-events: none; }
+.jl-an { position: relative; }
+.fv { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 2px solid var(--accent); border-radius: 14px; background: #fff; }
+.fv-img { position: relative; background: #111; border-radius: 10px; overflow: hidden; line-height: 0; }
+.fv-img canvas { width: 100%; height: auto; max-height: 70vh; object-fit: contain; display: block; }
+.fv-badge { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.65); color: #fff; font: 700 13px var(--body, inherit); padding: 4px 8px; border-radius: 6px; line-height: 1.2; }
+.fv-range { width: 100%; height: 28px; accent-color: var(--accent); }
+.fv-ctl { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
+.fv-ctl .btn { min-width: 56px; }
+.fv-t { font: 700 15px var(--head); min-width: 64px; text-align: center; }
+.fv-mark { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.fv-mark .btn { display: flex; flex-direction: column; align-items: center; line-height: 1.2; padding: 8px 14px; }
+.fv-mark .btn small { font-weight: 400; font-size: 11px; opacity: .85; }
+.mj-it.sel { box-shadow: 0 0 0 2px var(--c); }
+.mj-th { border: 1px solid var(--line); background: #fafaf8; border-radius: 8px; padding: 4px; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.mj-th.on { border-color: var(--accent); background: #fdecec; }
+.mj-th canvas { width: 100%; height: auto; border-radius: 6px; background: #111; display: block; }
+.mj-empty { display: grid; place-items: center; aspect-ratio: 16/9; background: #eceee9; border-radius: 6px; color: var(--ink-3); font-size: 12px; }
+@media (max-width: 600px) { .fv-mark .btn { flex: 1 1 140px; } .fv-img canvas { max-height: 55vh; } }
+.fv-strip { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
+.fv-strip button { flex: none; border: 2px solid transparent; border-radius: 6px; padding: 0; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; scroll-snap-align: center; }
+.fv-strip button.on { border-color: var(--accent); }
+.fv-strip img { width: 84px; height: auto; border-radius: 4px; display: block; background: #111; }
+.fv-strip small { font-size: 10px; color: var(--ink-3); }

@@ -2,7 +2,7 @@
 // El vídeo se analiza en el propio dispositivo y no se guarda: solo se guardan los resultados.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
-import { primeVideo, densify, detectFlight, drawFrameAt, extractFrames, frameErrorCm, heightCm } from '../lib/jump';
+import { canReadPixels, NO_PIXELS, primeVideo, densify, detectFlight, drawFrameAt, extractFrames, frameErrorCm, heightCm } from '../lib/jump';
 import { fmtNum, todayISO } from '../lib/format';
 import { usePlayableVideo } from '../lib/convert';
 import VideoConvert from './VideoConvert';
@@ -19,6 +19,7 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
   const [typeId, setTypeId] = useState(initialTypeId && jumpTypes.some(t => t.id === initialTypeId) ? initialTypeId : jumpTypes[0]?.id);
   const [pid, setPid] = useState('');
   const [date, setDate] = useState(todayISO());
+  const [doneIds, setDoneIds] = useState([]); // jugadores ya guardados en esta sesión
   const [jumps, setJumps] = useState(Array(N).fill(null));
   const [active, setActive] = useState(null); // { slot, file }
   const [multi, setMulti] = useState(null); // null | 'guided' | File
@@ -42,20 +43,24 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
         test_type_id: type.id, player_id: Number(pid), date, protocol: type.protocol || '',
         device: `Vídeo · tiempo de vuelo · ${fps} fps`,
         values: { altura: r1(best), media: r1(mean) },
-        notes: `Análisis por vídeo (tiempo de vuelo, h = g·t²/8). Saltos: ${done.map((j, i) => `${i + 1}) ${fmtNum(j.h, 1)} cm · ${Math.round(j.T * 1000)} ms${j.edited ? ' (duración corregida)' : ''}`).join(' | ')}`,
+        notes: `Vídeo marcado en el visor (tiempo de vuelo, h = g·t²/8). Saltos: ${done.map((j, i) => `${i + 1}) ${fmtNum(j.h, 1)} cm · ${Math.round(j.T * 1000)} ms${j.edited ? ' (duración corregida)' : ''}`).join(' | ')}`,
       });
-      toast('Test de salto guardado'); onSaved?.(); onClose();
+      toast(`Guardado: ${players.data?.find(p => String(p.id) === String(pid))?.full_name || 'jugador'}`); onSaved?.();
+      // Siguiente jugador sin cerrar la ventana (para evaluar a todo el equipo seguido)
+      const list = players.data || [], i = list.findIndex(p => String(p.id) === String(pid));
+      setDoneIds(o => [...o, String(pid)]);
+      if (i >= 0 && i + 1 < list.length) setPid(String(list[i + 1].id)); else onClose();
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
 
   return <Modal wide title="Test de salto con vídeo" onClose={onClose} footer={<>
     <button className="btn" onClick={onClose}>Cerrar</button>
-    <button className="btn primary" disabled={busy || done.length < N || !pid} onClick={save}>{busy ? 'Guardando…' : `Guardar mejor salto y media`}</button></>}>
+    <button className="btn primary" disabled={busy || done.length < N || !pid} onClick={save}>{busy ? 'Guardando…' : 'Guardar y pasar al siguiente jugador'}</button></>}>
     <input ref={rec} type="file" accept="video/*" capture="environment" hidden onChange={onFile} />
     <input ref={pick} type="file" accept="video/*" hidden onChange={onFile} />
     <div className="stack" style={{ gap: 12 }}>
       <div className="inline-fields">
-        <Field label="Jugador" required><select value={pid} onChange={e => setPid(e.target.value)}><option value="">Selecciona…</option>{players.data?.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></Field>
+        <Field label="Jugador" required><select value={pid} onChange={e => setPid(e.target.value)}><option value="">Selecciona…</option>{players.data?.map(p => <option key={p.id} value={p.id}>{doneIds.includes(String(p.id)) ? '✓ ' : ''}{p.full_name}</option>)}</select></Field>
         <Field label="Test" required><select value={typeId || ''} onChange={e => setTypeId(Number(e.target.value))}>{jumpTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
         <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} /></Field>
       </div>
@@ -82,8 +87,8 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
             <button className="btn sm primary" disabled={!!active || !!multi} onClick={() => open(i, 'rec')}>{j ? 'Repetir' : 'Grabar'}</button>
             <button className="btn sm" disabled={!!active || !!multi} onClick={() => open(i, 'pick')}>Adjuntar</button></div>
         </div>)}</div>
-        {active && <JumpAnalyzer key={active.file.name + active.slot + active.file.size} file={active.file} slot={active.slot}
-          onCancel={() => setActive(null)} onDone={res => { setJumps(js => js.map((x, k) => (k === active.slot ? res : x))); setActive(null); }} />}
+        {active && <MultiJumpAnalyzer key={active.file.name + active.slot + active.file.size} file={active.file} n={1} label={`Salto ${active.slot + 1}`}
+          onCancel={() => setActive(null)} onDone={r => { const res = { h: r.jumps[0].h, T: r.jumps[0].T, fps: r.fps, edited: r.jumps[0].edited }; setJumps(js => js.map((x, k) => (k === active.slot ? res : x))); setActive(null); }} />}
         {done.length > 0 && <div className="jl-sum">
           <div><small>Salto más alto</small><b>{fmtNum(best, 1)} <small>cm</small></b></div>
           <div><small>Media de {done.length === N ? 'los tres saltos' : `${done.length} salto${done.length > 1 ? 's' : ''}`}</small><b>{fmtNum(mean, 1)} <small>cm</small></b></div>
@@ -123,6 +128,7 @@ export function JumpAnalyzer({ file, slot, label, onDone, onCancel }) {
     const ctl = { aborted: false }; abort.current = ctl;
     try {
       const v = video.current;
+      if (!src.converted && !(await canReadPixels(v))) { src.needPixels(); setStage('roi'); return; }
       const r = await extractFrames(v, roi, { onProgress: setProg, signal: ctl });
       let d = detectFlight(r.frames, scaleFor(r.fps));
       if (!d.error) { setProg(1); r.frames = await densify(v, roi, r.frames, [d.takeoff, d.landing], r.fps); d = detectFlight(r.frames, scaleFor(r.fps)); }
@@ -130,7 +136,7 @@ export function JumpAnalyzer({ file, slot, label, onDone, onCancel }) {
       if (d.error) { setErr(d.error); setIdx({ t: Math.round(r.frames.length * 0.4), l: Math.round(r.frames.length * 0.55) }); }
       else setIdx({ t: d.takeoff, l: d.landing });
       setStage('review');
-    } catch (e) { if (e.message !== 'Cancelado') { setErr('No se ha podido leer el vídeo en este navegador. Prueba con otro formato o desde el móvil con el que se grabó.'); } setStage('roi'); }
+    } catch (e) { if (e.message === NO_PIXELS) { src.needPixels(); setStage('roi'); return; } if (e.message !== 'Cancelado') { setErr('No se ha podido leer el vídeo en este navegador. Prueba con otro formato o desde el móvil con el que se grabó.'); } setStage('roi'); }
   };
   useEffect(() => () => { if (abort.current) abort.current.aborted = true; }, []);
   useEffect(() => {
@@ -151,7 +157,7 @@ export function JumpAnalyzer({ file, slot, label, onDone, onCancel }) {
   return <div className="card jl-an">
     <div className="row between"><h3 style={{ margin: 0 }}>{label || `Salto ${slot + 1}`} · {file.name}</h3><button className="btn sm ghost" onClick={() => { if (abort.current) abort.current.aborted = true; onCancel(); }}>Cancelar</button></div>
     <VideoConvert src={src} />
-    <div className="jl-stage" style={{ display: stage === 'review' || src.state !== 'ok' ? 'none' : undefined }}>
+    <div className={'jl-stage' + (stage === 'review' || src.state !== 'ok' ? ' jl-off' : '')}>
       <div ref={box} className="jl-vid" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
         <video ref={video} src={url} muted playsInline preload="auto" onLoadedMetadata={onMeta} onError={src.fail} />
         {stage !== 'load' && <div className="jl-roi" style={{ left: roi.x * 100 + '%', top: roi.y * 100 + '%', width: roi.w * 100 + '%', height: roi.h * 100 + '%' }}><span>Pies</span></div>}
