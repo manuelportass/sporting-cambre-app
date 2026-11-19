@@ -51,14 +51,37 @@ function age(birth, at = today()) {
 
 const LIST_SQL = `SELECT i.*, p.first_name, p.last_name, p.photo_file_id, c.name AS category_name, c.code AS category_code, f.name AS phase_name, f.sort AS phase_sort
   FROM injuries i JOIN players p ON p.id=i.player_id LEFT JOIN categories c ON c.id=p.category_id LEFT JOIN rehab_phases f ON f.id=i.phase_id`;
+const parseJ = v => { try { return v ? JSON.parse(v) : {}; } catch { return {}; } };
 function decorate(i) {
   const t = today();
   return {
-    ...i, player_name: `${i.first_name} ${i.last_name}`.trim(), status_label: STATUS_LABEL[i.status],
+    ...i, anamnesis: parseJ(i.anamnesis), criteria: parseJ(i.criteria), player_name: `${i.first_name} ${i.last_name}`.trim(), status_label: STATUS_LABEL[i.status],
     days_elapsed: diffDays(i.injury_date, i.closed_at || t),
     review_overdue: !!(i.next_review && i.next_review < t && i.status !== 'completada'),
   };
 }
+
+// ----- Lesiones añadidas por el preparador (aparecen en la lista al registrar) -----
+const CT_TYPES = ['Muscular', 'Ligamentosa', 'Tendinosa', 'Articular', 'Ósea', 'Contusión', 'Sobrecarga', 'Otra'];
+r.get('/custom-types', (req, res) => res.json(db.prepare('SELECT * FROM injury_custom_types ORDER BY name').all()));
+r.post('/custom-types', h((req, res) => {
+  const name = String(req.body?.name || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  if (name.length < 3) throw bad('Escribe el nombre de la lesión.');
+  const region = String(req.body?.region || 'Otras').trim().slice(0, 40) || 'Otras';
+  const type = CT_TYPES.includes(req.body?.type) ? req.body.type : null;
+  const ex = db.prepare('SELECT * FROM injury_custom_types WHERE lower(name)=lower(?)').get(name);
+  if (ex) { db.prepare('UPDATE injury_custom_types SET region=?, type=? WHERE id=?').run(region, type, ex.id); return res.json({ ...ex, region, type }); }
+  const id = db.prepare('INSERT INTO injury_custom_types(name,region,type) VALUES (?,?,?)').run(name, region, type).lastInsertRowid;
+  audit('injury_custom_type', id, 'create', null, { name, region, type }, req.user.id);
+  res.json({ id, name, region, type });
+}));
+r.delete('/custom-types/:cid', h((req, res) => {
+  const ex = db.prepare('SELECT * FROM injury_custom_types WHERE id=?').get(req.params.cid);
+  if (!ex) throw notFound();
+  db.prepare('DELETE FROM injury_custom_types WHERE id=?').run(ex.id);
+  audit('injury_custom_type', ex.id, 'delete', ex, null, req.user.id);
+  res.json({ ok: true });
+}));
 
 r.get('/', h((req, res) => {
   const { player_id, status, type, from, to, q } = req.query;
@@ -68,6 +91,7 @@ r.get('/', h((req, res) => {
   if (status === 'abiertas') sql += " AND i.status!='completada'";
   else if (status) { sql += ' AND i.status=@status'; p.status = status; }
   if (type) { sql += ' AND (i.injury_type LIKE @type OR i.zone LIKE @type)'; p.type = '%' + type + '%'; }
+  if (req.query.key) { sql += ' AND i.catalog_key=@key'; p.key = String(req.query.key); }
   if (from) { sql += ' AND i.injury_date >= @from'; p.from = from; }
   if (to) { sql += ' AND i.injury_date <= @to'; p.to = to; }
   if (q) { sql += ' AND (p.first_name || \' \' || p.last_name) LIKE @q'; p.q = '%' + q + '%'; }
@@ -108,13 +132,18 @@ r.get('/calendar', h((req, res) => {
   res.json(ev.sort((a, b) => a.date.localeCompare(b.date)));
 }));
 
-const FIELDS = ['injury_date', 'zone', 'diagnosis', 'laterality', 'injury_type', 'mechanism', 'diagnostics', 'previous_injuries', 'symptoms', 'restrictions', 'coach_notes', 'phase_objectives', 'pending_criteria', 'next_review', 'return_training_date', 'return_match_date'];
+const FIELDS = ['catalog_key', 'grade', 'context', 'anamnesis', 'criteria', 'injury_date', 'zone', 'diagnosis', 'laterality', 'injury_type', 'mechanism', 'diagnostics', 'previous_injuries', 'symptoms', 'restrictions', 'coach_notes', 'phase_objectives', 'pending_criteria', 'next_review', 'return_training_date', 'return_match_date'];
 function clean(b, partial) {
   const o = {};
   for (const f of FIELDS) {
     if (b[f] === undefined) continue;
     if (f === 'injury_date') o[f] = reqDate(b[f], 'Fecha de lesión');
     else if (['next_review', 'return_training_date', 'return_match_date'].includes(f)) o[f] = optDate(b[f], 'Fecha');
+    else if (f === 'anamnesis' || f === 'criteria') {
+      const v = b[f] && typeof b[f] === 'object' ? JSON.stringify(b[f]) : null;
+      if (v && v.length > 20000) throw bad('Demasiados datos.');
+      o[f] = v;
+    } else if (f === 'catalog_key') o[f] = b[f] ? String(b[f]).slice(0, 40) : null;
     else if (f === 'laterality') o[f] = b[f] ? oneOf(b[f], ['derecha', 'izquierda', 'bilateral'], 'Lateralidad') : null;
     else o[f] = optText(b[f]);
   }
@@ -224,7 +253,7 @@ const IT = require('../lib/injtests');
 r.post('/:id/tests', h((req, res) => {
   const i = db.prepare('SELECT id FROM injuries WHERE id=?').get(req.params.id);
   if (!i) throw notFound();
-  const kind = oneOf(req.body?.kind, ['movilidad', 'ybt', 'fuerza', 'salto'], 'Tipo de test');
+  const kind = oneOf(req.body?.kind, ['movilidad', 'ybt', 'fuerza', 'salto', 'perimetro'], 'Tipo de test');
   const data = IT.clean(kind, req.body?.data || {});
   const o = { injury_id: i.id, date: reqDate(req.body?.date), kind, data: JSON.stringify(data), notes: optText(req.body?.notes, 1000) };
   const id = db.prepare('INSERT INTO injury_tests(injury_id,date,kind,data,notes) VALUES (@injury_id,@date,@kind,@data,@notes)').run(o).lastInsertRowid;

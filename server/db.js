@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS injury_tests (     -- tests de evolución de lesionad
   id INTEGER PRIMARY KEY,
   injury_id INTEGER NOT NULL REFERENCES injuries(id) ON DELETE CASCADE,
   date TEXT NOT NULL,
-  kind TEXT NOT NULL,                 -- movilidad | ybt | fuerza | salto
+  kind TEXT NOT NULL,                 -- movilidad | ybt | fuerza | salto | perimetro
   data TEXT NOT NULL,                 -- valores y resultados calculados (JSON)
   notes TEXT,
   created_at TEXT DEFAULT (datetime('now'))
@@ -394,6 +394,10 @@ if (!/'coach'/.test(db.prepare("SELECT sql FROM sqlite_master WHERE type='table'
     COMMIT;`);
   db.pragma('foreign_keys = ON');
 }
+// Lesiones: catálogo predefinido (protocolo por fases), grado, contexto, anamnesis y criterios de progresión marcados
+for (const [c, t] of [['catalog_key', 'TEXT'], ['grade', 'TEXT'], ['context', 'TEXT'], ['anamnesis', 'TEXT'], ['criteria', 'TEXT']])
+  if (!cols('injuries').includes(c)) db.exec(`ALTER TABLE injuries ADD COLUMN ${c} ${t}`);
+db.exec(`CREATE TABLE IF NOT EXISTS injury_custom_types (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, region TEXT, type TEXT, created_at TEXT DEFAULT (datetime('now')))`);
 // Multas: tipo de incumplimiento (no_completado = sin RPE · fuera_plazo = RPE entregado tarde)
 if (!cols('fines').includes('subtype')) {
   db.exec("ALTER TABLE fines ADD COLUMN subtype TEXT NOT NULL DEFAULT 'no_completado'");
@@ -550,6 +554,17 @@ db.prepare('INSERT OR IGNORE INTO test_types(name,family,fields,protocol) VALUES
   if (f && !f.some(x => x.key === 'gemelo_d')) {
     f.push({ key: 'gemelo_d', label: 'Gemelo derecho', unit: 'cm', decimals: 1, better: null }, { key: 'gemelo_i', label: 'Gemelo izquierdo', unit: 'cm', decimals: 1, better: null });
     db.prepare('UPDATE test_types SET fields=? WHERE id=?').run(JSON.stringify(f), t.id);
+  }
+}
+// Perfil carga–velocidad: además de la velocidad media (VMC media de las 5 repeticiones), la velocidad máxima
+// (la velocidad pico más alta de las 5 repeticiones de cada carga)
+{
+  const t = db.prepare("SELECT id, fields FROM test_types WHERE name='Sentadilla · perfil carga–velocidad'").get();
+  const f = t && JSON.parse(t.fields);
+  if (f && !f.some(x => x.key === 'p20')) {
+    const i = f.findIndex(x => x.key === 'rm');
+    f.splice(i < 0 ? f.length : i, 0, ...[20, 40, 60, 80].map(p => ({ key: 'p' + p, label: `V. máxima ${p} % 1RM`, unit: 'm/s', decimals: 2, better: 'higher' })));
+    db.prepare('UPDATE test_types SET fields=?, protocol=? WHERE id=?').run(JSON.stringify(f), 'Sentadilla trasera a máxima velocidad intencional en la fase concéntrica. 5 repeticiones consecutivas por carga (20, 40, 60 y 80 % del 1RM) en un vídeo por carga. Por cada carga: velocidad media = media de la velocidad media concéntrica de las 5 repeticiones; velocidad máxima = velocidad pico más alta de las 5 repeticiones (seguimiento del extremo de la barra).', t.id);
   }
 }
 // Y-Balance y movilidad también para el primer equipo (derecha / izquierda)

@@ -10,7 +10,7 @@ export const COMPUTED = { 'Sentadilla · 1RM estimado': ['rm'], 'Perímetros': [
 export const inputFields = type => type.fields.filter(f => !(COMPUTED[type.name] || []).includes(f.key) && !f.virtual);
 
 // Pares derecha/izquierda: claves terminadas en _d / _i
-const strip = l => l.replace(/\s*\((D|I)\)\s*$/, '').trim();
+const strip = l => l.replace(/\s*\((D|I)\)\s*$/, '').replace(/\s+(derech[oa]|izquierd[oa])\s*$/i, '').trim();
 export function pairsOf(fields) {
   const out = [];
   for (const f of fields) {
@@ -48,3 +48,28 @@ export function delta(cur, prev, better) {
 // Simetría entre lados: menor / mayor × 100 (verde ≥ 90 · naranja 80–89 · rojo < 80)
 export const symmetry = (a, b) => (a != null && b != null && Math.max(a, b) > 0 ? Math.min(a, b) / Math.max(a, b) * 100 : null);
 export const symColor = v => (v == null ? '#9a9b95' : v >= 90 ? '#2e9e4f' : v >= 80 ? '#ef7d32' : '#d6262f');
+
+// Test virtual «CMJ unilateral · LSI»: une «CMJ pierna derecha» e «CMJ pierna izquierda» del mismo día
+export const CMJ_D = 'CMJ pierna derecha', CMJ_I = 'CMJ pierna izquierda';
+export function cmjLsiType(types) {
+  const d = types.find(t => t.name === CMJ_D), i = types.find(t => t.name === CMJ_I);
+  if (!d || !i) return null;
+  const f = (k, l, s) => ({ key: `${k}_${s}`, label: `${l} (${s.toUpperCase()})`, unit: 'cm', decimals: 1, better: 'higher' });
+  return { id: 'cmj_lsi', name: 'CMJ unilateral · LSI', family: 'salto', virtual: true, dId: d.id, iId: i.id,
+    fields: [f('altura', 'Mejor salto', 'd'), f('altura', 'Mejor salto', 'i'), f('media', 'Media', 'd'), f('media', 'Media', 'i')] };
+}
+// Une los resultados D e I por jugador y fecha → filas con values { altura_d, altura_i, media_d, media_i }
+export function mergeCmj(dRows = [], iRows = []) {
+  const m = new Map();
+  const put = (r, s) => {
+    const k = r.player_id + '|' + r.date;
+    if (!m.has(k)) m.set(k, { id: 'c' + k, player_id: r.player_id, player_name: r.player_name, photo_file_id: r.photo_file_id, date: r.date, values: {} });
+    const o = m.get(k).values;
+    if (r.values.altura != null) o['altura_' + s] = r.values.altura;
+    if (r.values.media != null) o['media_' + s] = r.values.media;
+  };
+  dRows.forEach(r => put(r, 'd')); iRows.forEach(r => put(r, 'i'));
+  return [...m.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+// Lado menor de un par
+export const weakSide = (d, i) => (d == null || i == null || d === i ? null : d < i ? 'derecha' : 'izquierda');

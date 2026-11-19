@@ -9,8 +9,8 @@ import JumpLab from '../../components/JumpLab';
 import { useReadOnly } from '../../App';
 import SquatLab, { LV_TEST, RM_TEST } from '../../components/SquatLab';
 import { VO2_NOTE, isIFT, mergeVO2, vo2Detail, withVO2 } from '../../lib/vo2';
-import { FAMILY, FAMILY_ORDER, defaultOption, delta, inputFields, symmetry, viewOptions } from '../../lib/tests';
-import { Delta, DuoBar, Spark, Sym } from '../../components/TestViz';
+import { FAMILY, FAMILY_ORDER, cmjLsiType, defaultOption, delta, inputFields, mergeCmj, symColor, symmetry, viewOptions, weakSide } from '../../lib/tests';
+import { Delta, DuoBar, LsiGauge, Spark } from '../../components/TestViz';
 import { AngleTool } from '../../components/InjuryTests';
 
 export default function Tests() {
@@ -18,17 +18,21 @@ export default function Tests() {
   const [typeId, setTypeId] = useState(null);
   const ro = useReadOnly();
   const [tab, setTab] = useState('resultados');
-  useEffect(() => { if (types.data?.length && !types.data.find(t => t.id === typeId)) setTypeId((types.data.find(isIFT) || types.data[0]).id); }, [types.data, typeId]);
-  const type = types.data?.find(t => t.id === typeId);
+  const all = useMemo(() => { if (!types.data) return null; const v = cmjLsiType(types.data); return v ? [...types.data, v] : types.data; }, [types.data]);
+  useEffect(() => { if (all?.length && !all.find(t => t.id === typeId)) setTypeId((all.find(isIFT) || all[0]).id); }, [all, typeId]);
+  const type = all?.find(t => t.id === typeId);
+  const virt = type?.virtual;
   return <div>
     <PageHead back="/primer-equipo" title="Tests físicos" />
     <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resultados', label: 'Resultados' }, ...(ro ? [] : [{ key: 'registrar', label: 'Registrar' }]), { key: 'comparar', label: 'Evolución' }, { key: 'historial', label: 'Tabla' }, ...(ro ? [] : [{ key: 'configurar', label: 'Configurar' }])]} />
-    {types.data && tab !== 'configurar' && <TestPicker types={types.data} value={typeId} onChange={setTypeId} />}
+    {all && tab !== 'configurar' && <TestPicker types={all} value={typeId} onChange={setTypeId} />}
     {types.loading ? <Loading /> : <>
-      {tab === 'resultados' && type && <Results key={type.id} type={type} />}
-      {tab === 'registrar' && !ro && type && <Register type={type} types={types.data} />}
-      {tab === 'historial' && type && <History type={type} />}
-      {tab === 'comparar' && type && <Compare type={type} />}
+      {tab === 'resultados' && type && (virt ? <CmjResults key={type.id} type={type} /> : <Results key={type.id} type={type} />)}
+      {virt && tab !== 'resultados' && tab !== 'configurar' && <div className="card"><p style={{ marginTop: 0 }}><b>«CMJ unilateral · LSI» combina dos tests</b></p><p className="small muted">Une «CMJ pierna derecha» y «CMJ pierna izquierda» del mismo día y calcula el LSI (pierna menor / pierna mayor × 100). Para {tab === 'registrar' ? 'registrar' : 'ver la tabla o la evolución de'} los saltos, elige cada pierna:</p>
+        <div className="row" style={{ gap: 8 }}><button className="btn" onClick={() => setTypeId(type.dId)}>CMJ pierna derecha</button><button className="btn" onClick={() => setTypeId(type.iId)}>CMJ pierna izquierda</button></div></div>}
+      {tab === 'registrar' && !ro && type && !virt && <Register type={type} types={types.data} />}
+      {tab === 'historial' && type && !virt && <History type={type} />}
+      {tab === 'comparar' && type && !virt && <Compare type={type} />}
       {tab === 'configurar' && !ro && <Configure types={types.data} reload={types.reload} />}
     </>}
   </div>;
@@ -38,20 +42,33 @@ export default function Tests() {
 function TestPicker({ types, value, onChange }) {
   const fams = FAMILY_ORDER.map(f => [f, types.filter(t => (FAMILY[t.family] ? t.family : 'otro') === f)]).filter(([, l]) => l.length);
   return <div className="tpick">{fams.map(([f, l]) => <div key={f} className="tp-fam"><span>{FAMILY[f]}</span>
-    <div>{l.map(t => <button key={t.id} className={t.id === value ? 'on' : ''} onClick={() => onChange(t.id)}>{t.name}</button>)}</div></div>)}</div>;
+    <div>{l.map(t => <button key={t.id} className={(t.id === value ? 'on' : '') + (t.virtual ? ' virt' : '')} onClick={() => onChange(t.id)}>{t.name}</button>)}</div></div>)}</div>;
 }
 
 // Resultados: test → retest de cada jugador, de un vistazo
-function Results({ type: baseType }) {
-  const type = withVO2(baseType);
+function Results({ type }) {
   const l = useApi('/team/tests?type_id=' + type.id);
-  const opts = useMemo(() => viewOptions(type.fields), [type]);
-  const [optId, setOptId] = useState(() => defaultOption(type, opts));
-  const [sort, setSort] = useState('valor');
-  const o = opts.find(x => x.id === optId) || opts[0];
-  const data = useMemo(() => (l.data || []).map(mergeVO2), [l.data]);
   if (l.loading && !l.data) return <Loading />;
   if (l.error) return <ErrorBox error={l.error} retry={l.reload} />;
+  return <ResultsView type={type} rows0={l.data || []} />;
+}
+function CmjResults({ type }) {
+  const d = useApi('/team/tests?type_id=' + type.dId), i = useApi('/team/tests?type_id=' + type.iId);
+  const rows = useMemo(() => (d.data && i.data ? mergeCmj(d.data, i.data) : null), [d.data, i.data]);
+  if (!rows) return d.error || i.error ? <ErrorBox error={d.error || i.error} retry={() => { d.reload(); i.reload(); }} /> : <Loading />;
+  return <>
+    <p className="small muted" style={{ margin: '0 0 10px' }}>Une el CMJ de la pierna derecha y el de la izquierda hechos el mismo día. LSI = pierna menor / pierna mayor × 100.</p>
+    <ResultsView type={type} rows0={rows} /></>;
+}
+function ResultsView({ type: baseType, rows0 }) {
+  const type = withVO2(baseType);
+  const l = { data: rows0 };
+  const opts = useMemo(() => viewOptions(type.fields), [type]);
+  const [optId, setOptId] = useState(() => defaultOption(type, opts));
+  const [sort0, setSort] = useState(() => (opts.find(x => x.id === defaultOption(type, opts))?.pair ? 'lsi' : 'valor'));
+  const o = opts.find(x => x.id === optId) || opts[0];
+  const sort = o.pair || sort0 !== 'lsi' ? sort0 : 'valor';
+  const data = useMemo(() => (l.data || []).map(mergeVO2), [l.data]);
   if (!data.length) return <Empty title="Todavía no hay resultados de este test">Regístralos en la pestaña «Registrar».</Empty>;
   const byP = new Map();
   for (const r of data) { if (!byP.has(r.player_id)) byP.set(r.player_id, { id: r.player_id, name: r.player_name, photo: r.photo_file_id, list: [] }); byP.get(r.player_id).list.push(r); }
@@ -68,25 +85,27 @@ function Results({ type: baseType }) {
         sym: symmetry(L.values[d.key], L.values[i.key]), psym: P ? symmetry(P.values[d.key], P.values[i.key]) : null, spark: h.map(r => symmetry(r.values[d.key], r.values[i.key])).reverse() }; }).filter(Boolean);
     rows.forEach(r => { r.cur = r.d != null && r.i != null ? (r.d + r.i) / 2 : r.d ?? r.i; r.dd = delta(r.d, r.pd, better); r.di = delta(r.i, r.pi, better); r.dl = delta(r.sym, r.psym, 'higher'); });
   }
-  const sorters = { valor: (a, b) => (better === 'lower' ? a.cur - b.cur : b.cur - a.cur), mejora: (a, b) => (b.dl?.tone === 'up' ? 1 : 0) - (a.dl?.tone === 'up' ? 1 : 0) || ((b.dl?.pct ?? -1e9) * (better === 'lower' ? -1 : 1)) - ((a.dl?.pct ?? -1e9) * (better === 'lower' ? -1 : 1)), nombre: (a, b) => a.name.localeCompare(b.name) };
+  const sorters = { lsi: (a, b) => (a.sym ?? 999) - (b.sym ?? 999), valor: (a, b) => (better === 'lower' ? a.cur - b.cur : b.cur - a.cur), mejora: (a, b) => (b.dl?.tone === 'up' ? 1 : 0) - (a.dl?.tone === 'up' ? 1 : 0) || ((b.dl?.pct ?? -1e9) * (better === 'lower' ? -1 : 1)) - ((a.dl?.pct ?? -1e9) * (better === 'lower' ? -1 : 1)), nombre: (a, b) => a.name.localeCompare(b.name) };
   rows.sort(sorters[sort]);
   const max = Math.max(...rows.flatMap(r => o.field ? [r.cur, r.prev] : [r.d, r.i, r.pd, r.pi]).filter(v => v != null), 0);
   const withPrev = rows.filter(r => r.dl);
   const avg = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   const lastDate = rows.reduce((m, r) => (r.date > m ? r.date : m), '');
   const teamCur = avg(rows.map(r => o.field ? r.cur : r.sym).filter(v => v != null)), teamPrev = avg(withPrev.map(r => o.field ? r.prev : r.psym).filter(v => v != null));
+  const dist = o.pair ? [['≥ 90 %', rows.filter(r => r.sym >= 90).length, symColor(95)], ['80–89 %', rows.filter(r => r.sym >= 80 && r.sym < 90).length, symColor(85)], ['< 80 %', rows.filter(r => r.sym != null && r.sym < 80).length, symColor(70)]] : null;
   const up = withPrev.filter(r => r.dl.tone === 'up').length, down = withPrev.filter(r => r.dl.tone === 'down').length;
   return <div className="stack" style={{ gap: 12 }}>
     {opts.length > 1 && <div className="vopts">{opts.map(x => <button key={x.id} className={x.id === o.id ? 'on' : ''} onClick={() => setOptId(x.id)}>{x.label}{x.pair ? ' · D/I' : ''}</button>)}</div>}
     <div className="rs-kpis">
-      <div><small>{o.field ? 'Media del equipo' : 'Simetría media D/I'}</small><b>{teamCur == null ? '—' : fmtNum(teamCur, o.field ? dec : 0)}<span>{o.field ? (unit ? ` ${unit}` : '') : ' %'}</span></b>
-        {teamPrev != null && <Delta dl={delta(teamCur, teamPrev, o.field ? better : 'higher')} decimals={o.field ? dec : 0} unit={o.field ? unit : 'pts'} pct={!!o.field} />}</div>
+      <div><small>{o.field ? 'Media del equipo' : 'LSI medio del equipo (D/I)'}</small><b>{teamCur == null ? '—' : fmtNum(teamCur, o.field ? dec : 0)}<span>{o.field ? (unit ? ` ${unit}` : '') : ' %'}</span></b>
+        {teamPrev != null && <Delta dl={delta(teamCur, teamPrev, o.field ? better : 'higher')} decimals={o.field ? dec : 0} unit={o.field ? unit : 'pts'} pct={!!o.field} />}
+        {dist && <div className="lsi-dist">{dist.map(([l, n, c]) => <span key={l} style={{ background: c }} title={`${n} jugadores con LSI ${l}`}>{n} · {l}</span>)}</div>}</div>
       <div><small>Última evaluación</small><b className="rs-date">{fmtDate(lastDate, { day: 'numeric', month: 'short', year: 'numeric' })}</b><span className="small muted">{rows.length} jugador{rows.length === 1 ? '' : 'es'} evaluado{rows.length === 1 ? '' : 's'}</span></div>
       <div><small>Respecto a su test anterior</small><b className="rs-ud"><span className="up">▲ {up}</span> <span className="down">▼ {down}</span></b><span className="small muted">{withPrev.length ? `${withPrev.length} con retest` : 'Aún no hay retest'}</span></div>
     </div>
     <div className="card rs-card">
-      <div className="row between" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>{o.label}{unit ? ` (${unit})` : ''} · test → retest</h3>
-        <Seg value={sort} onChange={setSort} options={[{ value: 'valor', label: 'Mejor valor' }, { value: 'mejora', label: 'Más mejora' }, { value: 'nombre', label: 'A–Z' }]} /></div>
+      <div className="row between" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>{o.label}{unit ? ` (${unit})` : ''} · {o.pair ? 'derecha / izquierda y LSI' : 'test → retest'}</h3>
+        <Seg value={sort} onChange={setSort} options={[...(o.pair ? [{ value: 'lsi', label: 'Menor LSI' }] : []), { value: 'valor', label: 'Mejor valor' }, { value: 'mejora', label: 'Más mejora' }, { value: 'nombre', label: 'A–Z' }]} /></div>
       {o.field ? <div className="rs-list">{rows.map(r => <div key={r.id} className="rs-row">
         <span className="rs-who"><Avatar name={r.name} fileId={r.photo} /><span><b>{r.name}</b><small>{fmtDate(r.date, { day: 'numeric', month: 'short' })}{r.prevDate ? ` · antes ${fmtDate(r.prevDate, { day: 'numeric', month: 'short' })}` : ''}</small></span></span>
         <span className="rs-vals">{r.prev != null && <span className="rs-prev">{fmtNum(r.prev, dec)} →</span>}<b>{fmtNum(r.cur, dec)}</b></span>
@@ -99,9 +118,9 @@ function Results({ type: baseType }) {
         <span className="rs-side"><small>Derecha</small><b>{fmtNum(r.d, dec)}</b><Delta dl={r.dd} decimals={dec} pct={false} /></span>
         <span className="rs-side"><small>Izquierda</small><b>{fmtNum(r.i, dec)}</b><Delta dl={r.di} decimals={dec} pct={false} /></span>
         <span className="rs-lr"><span className="lr-bar"><i style={{ width: (r.d != null && max ? r.d / max * 100 : 0) + '%' }} /></span><span className="lr-bar i"><i style={{ width: (r.i != null && max ? r.i / max * 100 : 0) + '%' }} /></span></span>
-        <Sym v={r.sym} />
+        <LsiGauge v={r.sym} prev={r.psym} weak={weakSide(r.d, r.i)} compact />
       </div>)}</div>}
-      <p className="small muted" style={{ margin: '8px 0 0' }}>{o.field ? <>Gris: test anterior · color: último. <span className="dlt up">▲ mejora</span> <span className="dlt down">▼ empeora</span>{!better && ' (en este dato no hay «mejor» ni «peor»)'}.</> : <><span style={{ color: '#e30613' }}>■</span> derecha · <span style={{ color: '#2a78d6' }}>■</span> izquierda · Simetría = lado menor / lado mayor × 100 · <span style={{ color: '#2e9e4f' }}>●</span> ≥ 90 % · <span style={{ color: '#ef7d32' }}>●</span> 80–89 % · <span style={{ color: '#d6262f' }}>●</span> &lt; 80 %.</>}</p>
+      <p className="small muted" style={{ margin: '8px 0 0' }}>{o.field ? <>Gris: test anterior · color: último. <span className="dlt up">▲ mejora</span> <span className="dlt down">▼ empeora</span>{!better && ' (en este dato no hay «mejor» ni «peor»)'}.</> : <><span style={{ color: '#e30613' }}>■</span> derecha · <span style={{ color: '#2a78d6' }}>■</span> izquierda · LSI (índice de simetría) = lado menor / lado mayor × 100 · punto hueco: test anterior · <span style={{ color: '#2e9e4f' }}>●</span> ≥ 90 % · <span style={{ color: '#ef7d32' }}>●</span> 80–89 % · <span style={{ color: '#d6262f' }}>●</span> &lt; 80 %.</>}</p>
     </div>
   </div>;
 }

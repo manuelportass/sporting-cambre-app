@@ -2,8 +2,8 @@ import PhotoCapture from '../../components/PhotoCapture';
 import { useReadOnly } from '../../App';
 import { LVChart, LV_TEST } from '../../components/SquatLab';
 import { linfit, loadFor, PCTS } from '../../lib/bar';
-import { delta, symmetry, viewOptions } from '../../lib/tests';
-import { Delta, Spark, Sym } from '../../components/TestViz';
+import { delta, symmetry, viewOptions, pairsOf, mergeCmj, weakSide, CMJ_D, CMJ_I } from '../../lib/tests';
+import { Delta, Spark, Sym, LsiGauge, SideBars } from '../../components/TestViz';
 import { IFT, VO2_FIELD, VO2_NOTE, mergeVO2, vo2Detail } from '../../lib/vo2';
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -255,6 +255,7 @@ function TestsTab({ tests }) {
   if (!tests.length) return <Empty title="Sin tests registrados">Regístralos en <Link to="/primer-equipo/tests">Tests físicos</Link>.</Empty>;
   const ift = tests.filter(t => t.name === IFT);
   return <div className="stack">
+    <LsiCard tests={tests} byType={byType} />
     {ift.length > 0 && <VO2Card list={ift} />}
     {tests.some(t => t.name === LV_TEST) && <LVCard list={tests.filter(t => t.name === LV_TEST)} />}
     <div className="grid g2">{byType.map(([name, list0]) => {
@@ -272,7 +273,7 @@ function TestsTab({ tests }) {
         const sym = symmetry(vd, vi);
         return <div key={o.id} className="pt-tile pair"><small>{o.label}</small>
           <div className="pt-di"><span><em>D</em><b>{fmtNum(vd, d.decimals)}</b></span><span><em>I</em><b>{fmtNum(vi, i.decimals)}</b></span><span className="muted">{d.unit}</span></div>
-          <Sym v={sym} /><Spark values={[...list].reverse().map(r => symmetry(r.values[d.key], r.values[i.key]))} w={110} color="#2a78d6" /></div>;
+          <LsiGauge v={sym} weak={weakSide(vd, vi)} compact /><Spark values={[...list].reverse().map(r => symmetry(r.values[d.key], r.values[i.key]))} w={110} color="#2a78d6" /></div>;
       })}</div>
       <details className="pt-more"><summary>Ver todas las mediciones</summary>
       <div className="table-wrap"><table className="t small"><thead><tr><th>Fecha</th>{fields.map(f => <th key={f.key} className="n">{f.virtual ? <>VO₂máx <i>estimado</i></> : f.label} {f.unit && `(${f.unit})`}</th>)}<th>Dispositivo</th></tr></thead>
@@ -282,16 +283,41 @@ function TestsTab({ tests }) {
   })}</div></div>;
 }
 
+// Resumen de asimetrías (LSI) de todos los tests con derecha / izquierda, incluido el CMJ unilateral
+function LsiCard({ tests, byType }) {
+  const items = [];
+  const cm = mergeCmj(tests.filter(t => t.name === CMJ_D), tests.filter(t => t.name === CMJ_I)).filter(r => r.values.altura_d != null && r.values.altura_i != null);
+  if (cm.length) items.push({ k: 'cmj', label: 'CMJ unilateral · mejor salto', unit: 'cm', dec: 1, d: cm[0].values.altura_d, i: cm[0].values.altura_i, date: cm[0].date, prev: cm[1] ? symmetry(cm[1].values.altura_d, cm[1].values.altura_i) : null });
+  for (const [name, list] of byType) {
+    for (const p of pairsOf(list[0].fields).filter(p => p.key !== 'long')) {
+      const h = list.filter(r => r.values[p.d.key] != null && r.values[p.i.key] != null);
+      if (!h.length) continue;
+      items.push({ k: name + p.key, label: name === p.label ? name : `${name} · ${p.label}`, unit: p.unit, dec: p.decimals ?? 1, d: h[0].values[p.d.key], i: h[0].values[p.i.key], date: h[0].date, prev: h[1] ? symmetry(h[1].values[p.d.key], h[1].values[p.i.key]) : null });
+    }
+  }
+  if (!items.length) return null;
+  return <div className="card"><div className="row between"><h3 style={{ margin: 0 }}>Asimetrías entre piernas (LSI)</h3><span className="small muted">LSI = lado menor / lado mayor × 100</span></div>
+    <div className="lsi-grid">{items.map(x => <div key={x.k} className="lsi-it">
+      <div className="row between" style={{ flexWrap: 'nowrap' }}><b className="small">{x.label}</b><span className="small muted">{fmtDate(x.date, { day: 'numeric', month: 'short' })}</span></div>
+      <SideBars a={x.d} b={x.i} la="Derecha" lb="Izquierda" unit={x.unit} decimals={x.dec} />
+      <LsiGauge v={symmetry(x.d, x.i)} prev={x.prev} weak={weakSide(x.d, x.i)} />
+    </div>)}</div>
+    <p className="small muted" style={{ margin: '8px 0 0' }}><span style={{ color: '#2e9e4f' }}>●</span> ≥ 90 % · <span style={{ color: '#ef7d32' }}>●</span> 80–89 % · <span style={{ color: '#d6262f' }}>●</span> &lt; 80 % · punto hueco: evaluación anterior.</p>
+  </div>;
+}
+
 // Curva carga–velocidad en sentadilla (última evaluación y, en gris, la anterior)
 function LVCard({ list }) {
-  const pts = r => PCTS.filter(p => r.values['v' + p] != null && r.values.rm).map(p => ({ load: loadFor(r.values.rm, p), v: r.values['v' + p] }));
+  const pts = (r, k) => PCTS.filter(p => r.values[k + p] != null && r.values.rm).map(p => ({ load: loadFor(r.values.rm, p), v: r.values[k + p] }));
   const last = list[0], prev = list[1];
-  const P = pts(last), fit = linfit(P.map(x => x.load), P.map(x => x.v));
-  return <div className="card"><div className="row between"><h3 style={{ margin: 0 }}>Sentadilla · curva carga–velocidad</h3><span className="small muted">{fmtDate(last.date)} · 1RM {fmtNum(last.values.rm, 1)} kg</span></div>
-    <LVChart pts={P} fit={fit} rm={last.values.rm} prev={prev ? pts(prev).map(x => ({ load: x.load, prev: x.v })) : null} />
-    <div className="sq-fit small">{PCTS.map(p => <span key={p}>{p} %: <b>{fmtNum(last.values['v' + p], 2)}</b> m/s{prev?.values['v' + p] != null ? <span className="muted"> ({last.values['v' + p] - prev.values['v' + p] >= 0 ? '+' : ''}{fmtNum(last.values['v' + p] - prev.values['v' + p], 2)})</span> : null}</span>)}
-      {fit && <span>R² <b>{fmtNum(fit.r2, 2)}</b></span>}</div>
-    {prev && <p className="small muted" style={{ margin: '4px 0 0' }}>En gris, la evaluación anterior ({fmtDate(prev.date)}).</p>}
+  const kinds = [['p', 'Velocidad máxima'], ['v', 'Velocidad media']].filter(([k]) => pts(last, k).length);
+  return <div className="card"><div className="row between"><h3 style={{ margin: 0 }}>Sentadilla · perfil carga–velocidad</h3><span className="small muted">{fmtDate(last.date)} · 1RM {fmtNum(last.values.rm, 1)} kg</span></div>
+    <div className={kinds.length > 1 ? 'grid g2' : ''}>{kinds.map(([k, t]) => { const P = pts(last, k), fit = linfit(P.map(x => x.load), P.map(x => x.v));
+      return <div key={k}><b className="small">{t}</b>
+        <LVChart pts={P} fit={fit} rm={last.values.rm} label={t} prev={prev ? pts(prev, k).map(x => ({ load: x.load, prev: x.v })) : null} height={210} />
+        <div className="sq-fit small">{PCTS.map(p => <span key={p}>{p} %: <b>{fmtNum(last.values[k + p], 2)}</b> m/s{prev?.values[k + p] != null ? <span className="muted"> ({last.values[k + p] - prev.values[k + p] >= 0 ? '+' : ''}{fmtNum(last.values[k + p] - prev.values[k + p], 2)})</span> : ''}</span>)}
+          {fit && <span>R² <b>{fmtNum(fit.r2, 2)}</b></span>}</div></div>; })}</div>
+    {prev && <p className="small muted" style={{ margin: '4px 0 0' }}>En gris, la evaluación anterior ({fmtDate(prev.date)}). Media = media de la VMC de las 5 repeticiones; máxima = velocidad pico más alta de las 5.</p>}
   </div>;
 }
 

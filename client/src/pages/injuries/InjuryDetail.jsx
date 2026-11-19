@@ -6,6 +6,8 @@ import { MultiLine } from '../../components/charts';
 import InjuryTestsTab from '../../components/InjuryTests';
 import { saveBlob } from '../../lib/files';
 import { INJ_COLOR, INJ_STATUS, fmtDate, fmtDateTime, fmtNum, todayISO } from '../../lib/format';
+import { CATALOG, CONTEXTS, byKey, answered } from '../../lib/injuryCatalog';
+import { AnamnesisForm, Chips, EstimateCard, KeyPoints, LatChips, PhaseGuide, ProtocolView, cap, injSub } from '../../components/InjuryParts';
 
 // Descripción del dolor según la EVA
 const evaText = v => (v === 0 ? 'Sin dolor' : v <= 3 ? 'Leve' : v <= 6 ? 'Moderado' : v <= 9 ? 'Intenso' : 'El peor imaginable');
@@ -24,17 +26,27 @@ export default function InjuryDetail() {
   const i = r.data, p = i.player;
   const pain = settings.data?.painScale || { min: 0, max: 10, label: 'EVA 0–10' };
   const curIdx = phases.data?.findIndex(f => f.id === i.phase_id) ?? -1;
+  const cat = byKey(i.catalog_key);
+  const catPhase = k => cat?.phases?.[k]?.name;
+  const toggleCrit = async (k, x) => {
+    const cur = i.criteria?.['p' + k] || [];
+    const next = { ...(i.criteria || {}), ['p' + k]: cur.includes(x) ? cur.filter(y => y !== x) : [...cur, x].sort() };
+    try { await api.put('/injuries/' + id, { criteria: next }); r.reload(); } catch (e) { toast(e.message, 'err'); }
+  };
+  const saveAnam = async ans => { try { await api.put('/injuries/' + id, { anamnesis: ans }); toast('Anamnesis guardada'); r.reload(); } catch (e) { toast(e.message, 'err'); throw e; } };
+  const an = answered(i.catalog_key, i.anamnesis);
   const painData = [...i.pain].reverse().map(e => ({ date: e.date, pain: e.eva }));
   const lastPain = i.pain[0];
   const uploadDoc = async f => { try { await api.upload(`/injuries/${id}/files`, f); toast('Documento adjuntado'); r.reload(); } catch (e) { toast(e.message, 'err'); } };
-  const lesion = [['Fecha', fmtDate(i.injury_date)], ['Zona', i.zone], ['Lateralidad', i.laterality], ['Tipo', i.injury_type], ['Mecanismo', i.mechanism],
+  const lesion = [['Lesión', cat && cat.key !== 'otra' ? cat.name : i.zone], [cat?.gradeLabel || 'Grado', i.grade], ['Lado', cap(i.laterality)], ['Fecha', fmtDate(i.injury_date)], ['Mecanismo', i.mechanism], ['Dónde', i.context],
     ['Próxima revisión', i.next_review && fmtDate(i.next_review) + (i.review_overdue ? ' (vencida)' : '')], ['Vuelta al entrenamiento', i.return_training_date && fmtDate(i.return_training_date)], ['Vuelta a la competición', i.return_match_date && fmtDate(i.return_match_date)]];
-  const textos = [['Diagnóstico', i.diagnosis], ['Pruebas y valoración sanitaria', i.diagnostics], ['Objetivos de la fase', i.phase_objectives], ['Criterios pendientes para progresar', i.pending_criteria],
+  const textos = [['Diagnóstico', i.diagnosis], ['Pruebas y valoración sanitaria', i.diagnostics], ['Objetivos propios de la fase', i.phase_objectives], ['Otros criterios pendientes', i.pending_criteria],
     ['Síntomas y evolución', i.symptoms], ['Restricciones médicas', i.restrictions], ['Antecedentes', i.previous_injuries], ['Observaciones', i.coach_notes]];
-  const missing = lesion.filter(([, v]) => !v).length + textos.filter(([, v]) => !v).length;
+  const essentials = ['Lesión', ...(cat?.grades?.length ? [cat.gradeLabel] : []), 'Lado', 'Mecanismo', 'Dónde'];
+  const missing = lesion.filter(([k, v]) => !v && essentials.includes(k)).length;
   return <div style={{ maxWidth: 960 }}>
     <PageHead back="/lesiones" eyebrow={<ColorBadge color={INJ_COLOR[i.status]}>{INJ_STATUS[i.status]}</ColorBadge>} title={p.full_name}
-      sub={`${i.zone || 'Zona pendiente'}${i.laterality ? ' · ' + i.laterality : ''} · ${i.days_elapsed} días`} actions={<>
+      sub={`${injSub(i)} · ${i.days_elapsed} días`} actions={<>
         <MoreMenu items={[
           { label: 'Cambiar fase o estado', onClick: () => setModal('phase') },
           { label: 'Editar datos de la lesión', onClick: () => setModal('edit') },
@@ -45,20 +57,30 @@ export default function InjuryDetail() {
         {i.status !== 'completada' && <button className="btn primary" onClick={() => setModal('finish')}>✓ Finalizar recuperación</button>}</>} />
     {i.status === 'completada' && <div className="alert ok" style={{ marginBottom: 14 }}><span>✓</span><div><b>Recuperación finalizada</b> el {fmtDate(i.closed_at)} · {i.days_elapsed} días desde la lesión. Queda guardada en el historial del jugador.</div></div>}
     {phases.data && <button className="card" onClick={() => setModal('phase')} style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: 14 }}>
-      <div className="row between small" style={{ marginBottom: 6 }}><b>Fase {curIdx + 1} de {phases.data.length}: {i.phase_name || 'Sin fase'}</b><span className="muted">Cambiar ›</span></div>
-      <div className="phasebar" aria-hidden="true">{phases.data.map((f, k) => <i key={f.id} title={f.name} className={k < curIdx ? 'done' : k === curIdx ? 'cur' : ''} />)}</div>
+      <div className="row between small" style={{ marginBottom: 6 }}><b>Fase {curIdx + 1} de {phases.data.length}: {catPhase(curIdx) || i.phase_name || 'Sin fase'}</b><span className="muted">Cambiar ›</span></div>
+      <div className="phasebar" aria-hidden="true">{phases.data.map((f, k) => <i key={f.id} title={catPhase(k) || f.name} className={k < curIdx ? 'done' : k === curIdx ? 'cur' : ''} />)}</div>
     </button>}
-    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resumen', label: 'Resumen' }, { key: 'dolor', label: `Dolor EVA (${i.pain.length})` }, { key: 'seguimiento', label: `Seguimiento (${i.entries.length})` }, { key: 'tests', label: `Tests (${i.tests.length})` }, { key: 'docs', label: `Documentos (${i.files.length})` }, { key: 'historial', label: 'Historial' }]} />
+    <Tabs value={tab} onChange={setTab} tabs={[{ key: 'resumen', label: 'Resumen' }, { key: 'protocolo', label: 'Protocolo' }, { key: 'anamnesis', label: `Anamnesis (${an.n}/${an.total})` }, { key: 'dolor', label: `Dolor EVA (${i.pain.length})` }, { key: 'seguimiento', label: `Seguimiento (${i.entries.length})` }, { key: 'tests', label: `Tests (${i.tests.length})` }, { key: 'docs', label: `Documentos (${i.files.length})` }, { key: 'historial', label: 'Historial' }]} />
     {tab === 'resumen' && <div className="stack" style={{ gap: 14 }}>
-      <div className="card"><dl className="grid g3" style={{ margin: 0, gap: 12 }}>{lesion.filter(([, v]) => v).map(([k, v]) => <div key={k}><dt className="small muted">{k}</dt><dd style={{ margin: 0, fontWeight: 500 }}>{v}</dd></div>)}</dl>
+      <div className="card"><div className="facts">{lesion.filter(([, v]) => v).map(([k, v]) => <div key={k}><small>{k}</small><b>{v}</b></div>)}</div>
         {textos.filter(([, v]) => v).map(([k, v]) => <div key={k} style={{ marginTop: 12 }}><div className="small muted">{k}</div><div style={{ whiteSpace: 'pre-wrap' }}>{v}</div></div>)}
-        {missing > 0 && <button className="btn sm ghost" style={{ paddingLeft: 0, marginTop: 8 }} onClick={() => setModal('edit')}>{missing} datos pendientes de introducir · Completar</button>}
+        {!cat && <div className="alert small" style={{ marginTop: 10 }}><span>ℹ</span><div>Esta lesión no está asociada al catálogo. <a href="#" onClick={e => { e.preventDefault(); setModal('edit'); }}>Elige el tipo de lesión</a> para ver su protocolo, criterios y anamnesis específica.</div></div>}
+        {missing > 0 && <button className="btn sm ghost" style={{ paddingLeft: 0, marginTop: 8 }} onClick={() => setModal('edit')}>{missing === 1 ? '1 dato básico sin rellenar' : `${missing} datos básicos sin rellenar`} · Completar</button>}
+      </div>
+      <div className="grid g2 res-grid">
+        {cat?.phases?.length > 0 && curIdx >= 0 ? <PhaseGuide i={i} curIdx={curIdx} phaseCount={phases.data.length} onToggle={toggleCrit} onAdvance={() => setModal('phase')} compact /> : null}
+        <div className="stack" style={{ gap: 14 }}>
+          <EstimateCard i={i} />
+          <KeyPoints i={i} onOpen={() => setTab('anamnesis')} />
+        </div>
       </div>
       <div className="card"><div className="row between"><h3 style={{ margin: 0 }}>Dolor durante la sesión (EVA)</h3>{lastPain && <span className="small muted">Último: <b>{lastPain.eva}</b> · {fmtDate(lastPain.date, { day: 'numeric', month: 'short' })}</span>}</div>
         {!i.pain.length ? <p className="small muted" style={{ marginBottom: 0 }}>Aún no hay registros. El jugador lo registra desde su cuenta después de cada sesión (fecha, EVA 0–10 y observaciones).</p> :
           painData.length >= 2 ? <MultiLine data={painData} lines={[{ key: 'pain', label: 'EVA' }]} yDomain={[0, 10]} decimals={0} height={180} /> : <p className="small" style={{ marginBottom: 0 }}>EVA {lastPain.eva} el {fmtDate(lastPain.date)}: «{lastPain.notes}»</p>}
       </div>
     </div>}
+    {tab === 'protocolo' && <ProtocolView i={i} curIdx={curIdx} onToggle={toggleCrit} />}
+    {tab === 'anamnesis' && <AnamnesisForm key={i.id + (i.updated_at || '')} i={i} onSave={saveAnam} />}
     {tab === 'dolor' && (!i.pain.length ? <Empty title="Sin registros de dolor">El jugador lo registra desde su cuenta, en «EVA lesión», después de cada sesión.</Empty> : <div className="stack" style={{ gap: 12 }}>
       <div className="eva-kpis">
         <div style={{ '--c': evaColor(lastPain.eva) }}><small>Último</small><b>{lastPain.eva}</b><span>{evaText(lastPain.eva)} · {fmtDate(lastPain.date, { day: 'numeric', month: 'short' })}</span></div>
@@ -92,7 +114,7 @@ export default function InjuryDetail() {
       {h.note && <div className="small muted">«{h.note}»</div>}</div>)}</div>
       {i.otherInjuries.length > 0 && <><div className="section-title">Otras lesiones del jugador</div>{i.otherInjuries.map(o => <div key={o.id} className="small"><a href="#" onClick={e => { e.preventDefault(); nav('/lesiones/' + o.id); }}>{fmtDate(o.injury_date)} · {o.zone || 'Lesión'}</a> — {INJ_STATUS[o.status]}</div>)}</>}
     </div>}
-    {modal === 'phase' && <PhaseModal i={i} phases={phases.data || []} onClose={() => setModal(null)} onSaved={r.reload} />}
+    {modal === 'phase' && <PhaseModal i={i} cat={cat} curIdx={curIdx} phases={phases.data || []} onClose={() => setModal(null)} onSaved={r.reload} />}
     {modal === 'edit' && <EditInjury i={i} onClose={() => setModal(null)} onSaved={r.reload} />}
     {(modal === 'entry' || modal?.entry) && <EntryModal i={i} entry={modal?.entry} phases={phases.data || []} pain={pain} onClose={() => setModal(null)} onSaved={r.reload} />}
     {modal === 'finish' && <FinishModal i={i} onClose={() => setModal(null)} onSaved={r.reload} />}
@@ -127,16 +149,23 @@ function FinishModal({ i, onClose, onSaved }) {
   </Modal>;
 }
 
-function PhaseModal({ i, phases, onClose, onSaved }) {
+function PhaseModal({ i, cat, curIdx, phases, onClose, onSaved }) {
   const toast = useToast();
-  const [v, setV] = useState({ phase_id: i.phase_id || '', status: i.status, note: '' });
+  const [v, setV] = useState(() => {
+    const ph = cat?.phases?.[curIdx];
+    const ok = ph ? (i.criteria?.['p' + curIdx] || []).map(k => ph.criteria[k]).filter(Boolean) : [];
+    const allOk = ph && ok.length === ph.criteria.length;
+    const next = allOk && phases[curIdx + 1];
+    const status = !next ? i.status : curIdx + 1 >= 4 ? 'reincorporacion' : i.status === 'activa' ? 'readaptacion' : i.status;
+    return { phase_id: next ? next.id : i.phase_id || '', status, note: ok.length ? 'Criterios cumplidos: ' + ok.join('; ') + '.' : '' };
+  });
   const [err, setErr] = useState(null);
   return <Modal title="Actualizar fase / estado" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={async () => {
     try { await api.post(`/injuries/${i.id}/phase`, v); toast('Fase actualizada'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
   }}>Guardar cambio</button></>}>
     <div className="stack">
       <p className="small muted" style={{ margin: 0 }}>Actualiza la fase cuando se cumplan los criterios de progresión establecidos y conforme a las indicaciones de los profesionales sanitarios. El cambio queda registrado en el historial.</p>
-      <Field label="Fase"><select value={v.phase_id} onChange={e => setV({ ...v, phase_id: Number(e.target.value) })}>{phases.map((f, k) => <option key={f.id} value={f.id}>{k + 1}. {f.name}</option>)}</select></Field>
+      <Field label="Fase"><select value={v.phase_id} onChange={e => setV({ ...v, phase_id: Number(e.target.value) })}>{phases.map((f, k) => <option key={f.id} value={f.id}>{k + 1}. {cat?.phases?.[k]?.name || f.name}</option>)}</select></Field>
       <Field label="Estado del proceso"><select value={v.status} onChange={e => setV({ ...v, status: e.target.value })}>{Object.entries(INJ_STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
       <Field label="Motivo / criterios cumplidos"><textarea value={v.note} onChange={e => setV({ ...v, note: e.target.value })} /></Field>
       <ErrorBox error={err} />
@@ -144,25 +173,43 @@ function PhaseModal({ i, phases, onClose, onSaved }) {
   </Modal>;
 }
 
-const EDIT_FIELDS = [
-  ['injury_date', 'Fecha de lesión', 'date'], ['zone', 'Zona anatómica'], ['laterality', 'Lateralidad', 'lat'], ['injury_type', 'Tipo de lesión'], ['mechanism', 'Mecanismo de lesión'],
-  ['return_training_date', 'Vuelta al entrenamiento colectivo', 'date'], ['return_match_date', 'Vuelta a la competición', 'date'],
-  ['diagnosis', 'Diagnóstico o descripción exacta disponible', 'area'], ['diagnostics', 'Pruebas diagnósticas y valoración del profesional sanitario', 'area'],
-  ['previous_injuries', 'Antecedentes de lesiones', 'area'], ['symptoms', 'Síntomas y evolución', 'area'], ['restrictions', 'Restricciones o recomendaciones médicas', 'area'],
-  ['phase_objectives', 'Objetivos de la fase actual', 'area'], ['pending_criteria', 'Criterios pendientes para progresar', 'area'], ['coach_notes', 'Observaciones del preparador físico', 'area'],
+const MORE_FIELDS = [
+  ['diagnostics', 'Pruebas diagnósticas y valoración del profesional sanitario'], ['symptoms', 'Síntomas y evolución'], ['previous_injuries', 'Antecedentes de lesiones'],
+  ['phase_objectives', 'Objetivos propios de la fase'], ['pending_criteria', 'Otros criterios pendientes para progresar'],
 ];
 function EditInjury({ i, onClose, onSaved }) {
   const toast = useToast();
-  const [v, setV] = useState(Object.fromEntries(EDIT_FIELDS.map(([k]) => [k, i[k] || ''])));
+  const keys = ['catalog_key', 'grade', 'laterality', 'mechanism', 'context', 'injury_date', 'zone', 'injury_type', 'return_training_date', 'return_match_date', 'diagnosis', 'restrictions', 'coach_notes', ...MORE_FIELDS.map(f => f[0])];
+  const [v, setV] = useState(Object.fromEntries(keys.map(k => [k, i[k] || ''])));
   const [err, setErr] = useState(null);
+  const set = (k, val) => setV(o => ({ ...o, [k]: val }));
+  const c = byKey(v.catalog_key);
+  const changeCat = k => { const n = byKey(k); setV(o => ({ ...o, catalog_key: k, grade: '', zone: n && k !== 'otra' ? n.zone : o.zone, injury_type: n && k !== 'otra' ? n.type : o.injury_type })); };
+  const mechs = c ? [...c.mechs, ...(v.mechanism && !c.mechs.includes(v.mechanism) ? [v.mechanism] : [])] : null;
+  const ta = (k, l) => <Field key={k} label={l}><textarea value={v[k]} onChange={e => set(k, e.target.value)} /></Field>;
   return <Modal wide title="Datos de la lesión" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" onClick={async () => {
-    try { await api.put('/injuries/' + i.id, { ...v, laterality: v.laterality || null }); toast('Datos guardados'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
+    try { await api.put('/injuries/' + i.id, { ...v, laterality: v.laterality || null, catalog_key: v.catalog_key || null }); toast('Datos guardados'); onSaved(); onClose(); } catch (e) { setErr(e.message); }
   }}>Guardar</button></>}>
-    <div className="inline-fields">{EDIT_FIELDS.filter(f => f[2] !== 'area').map(([k, l, t]) => <Field key={k} label={l}>{t === 'lat' ?
-      <select value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })}><option value="">Pendiente</option><option value="derecha">Derecha</option><option value="izquierda">Izquierda</option><option value="bilateral">Bilateral</option></select> :
-      <input type={t === 'date' ? 'date' : 'text'} value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} />}</Field>)}</div>
-    <div className="grid g2" style={{ marginTop: 12 }}>{EDIT_FIELDS.filter(f => f[2] === 'area').map(([k, l]) => <Field key={k} label={l}><textarea value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} /></Field>)}</div>
-    <ErrorBox error={err} />
+    <div className="stack">
+      <div className="inline-fields">
+        <Field label="Lesión"><select value={v.catalog_key} onChange={e => changeCat(e.target.value)}><option value="">Sin asociar al catálogo</option>{CATALOG.map(x => <option key={x.key} value={x.key}>{x.name}</option>)}<option value="otra">Otra lesión</option></select></Field>
+        {c?.grades?.length > 0 && <Field label={c.gradeLabel}><select value={v.grade} onChange={e => set('grade', e.target.value)}><option value="">Pendiente</option>{c.grades.map(g => <option key={g.v}>{g.v}</option>)}{v.grade && !c.grades.some(g => g.v === v.grade) && <option>{v.grade}</option>}</select></Field>}
+        <Field label="Fecha de lesión"><input type="date" value={v.injury_date} onChange={e => set('injury_date', e.target.value)} /></Field>
+        <Field label="Mecanismo">{mechs ? <select value={v.mechanism} onChange={e => set('mechanism', e.target.value)}><option value="">No se sabe</option>{mechs.map(m => <option key={m}>{m}</option>)}</select> : <input type="text" value={v.mechanism} onChange={e => set('mechanism', e.target.value)} />}</Field>
+      </div>
+      {(!c || c.key === 'otra') && <div className="inline-fields"><Field label="Zona anatómica"><input type="text" value={v.zone} onChange={e => set('zone', e.target.value)} /></Field><Field label="Tipo de lesión"><input type="text" value={v.injury_type} onChange={e => set('injury_type', e.target.value)} /></Field></div>}
+      <div className="grid g2">
+        <Field label="Lado"><LatChips value={v.laterality} onChange={x => set('laterality', x)} /></Field>
+        <Field label="¿Dónde se lesionó?"><Chips options={CONTEXTS} value={v.context} onChange={x => set('context', x)} /></Field>
+      </div>
+      <div className="inline-fields">
+        <Field label="Vuelta al entrenamiento colectivo"><input type="date" value={v.return_training_date} onChange={e => set('return_training_date', e.target.value)} /></Field>
+        <Field label="Vuelta a la competición"><input type="date" value={v.return_match_date} onChange={e => set('return_match_date', e.target.value)} /></Field>
+      </div>
+      <div className="grid g3">{ta('diagnosis', 'Diagnóstico del profesional sanitario')}{ta('restrictions', 'Restricciones o recomendaciones médicas')}{ta('coach_notes', 'Observaciones del preparador físico')}</div>
+      <details open={MORE_FIELDS.some(([k]) => i[k])}><summary className="small">Más campos (opcionales)</summary><div className="grid g2" style={{ marginTop: 8 }}>{MORE_FIELDS.map(([k, l]) => ta(k, l))}</div></details>
+      <ErrorBox error={err} />
+    </div>
   </Modal>;
 }
 
@@ -186,7 +233,7 @@ function EntryModal({ i, entry, phases, pain, onClose, onSaved }) {
     <div className="stack" style={{ gap: 14 }}>
       <div className="inline-fields">
         <Field label="Fecha" required><input type="date" value={v.date} onChange={e => setV({ ...v, date: e.target.value })} /></Field>
-        <Field label="Fase"><select value={v.phase_id || ''} onChange={e => setV({ ...v, phase_id: e.target.value })}><option value="">—</option>{phases.map((f, k) => <option key={f.id} value={f.id}>{k + 1}. {f.name}</option>)}</select></Field>
+        <Field label="Fase"><select value={v.phase_id || ''} onChange={e => setV({ ...v, phase_id: e.target.value })}><option value="">—</option>{phases.map((f, k) => <option key={f.id} value={f.id}>{k + 1}. {cat?.phases?.[k]?.name || f.name}</option>)}</select></Field>
         <Field label="Fecha de revisión"><input type="date" value={v.review_date} onChange={e => setV({ ...v, review_date: e.target.value })} /></Field>
       </div>
       <div><h3 style={{ marginBottom: 8 }}>Ejercicios realizados</h3>

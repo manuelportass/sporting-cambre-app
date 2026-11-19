@@ -5,6 +5,7 @@ import { api } from '../api';
 import { densify, detectFlight, drawFrameAt, extractFrames, frameErrorCm, heightCm } from '../lib/jump';
 import { fmtNum, todayISO } from '../lib/format';
 import { ErrorBox, Field, Modal, useApi, useToast } from './ui';
+import { GuidedRecorder, MultiJumpAnalyzer, REST_S, ThreeJumpButtons } from './JumpProtocol';
 
 const N = 3;
 const DEF_ROI = { x: 0.25, y: 0.78, w: 0.5, h: 0.17 };
@@ -18,6 +19,7 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
   const [date, setDate] = useState(todayISO());
   const [jumps, setJumps] = useState(Array(N).fill(null));
   const [active, setActive] = useState(null); // { slot, file }
+  const [multi, setMulti] = useState(null); // null | 'guided' | File
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const rec = useRef(null), pick = useRef(null), slotRef = useRef(0);
@@ -27,7 +29,7 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
   const mean = done.length ? done.reduce((a, j) => a + j.h, 0) / done.length : null;
   const open = (slot, how) => { slotRef.current = slot; (how === 'rec' ? rec : pick).current.click(); };
   const onFile = e => { const f = e.target.files[0]; e.target.value = ''; if (f) setActive({ slot: slotRef.current, file: f }); };
-  useEffect(() => { setJumps(Array(N).fill(null)); setActive(null); }, [pid, typeId]);
+  useEffect(() => { setJumps(Array(N).fill(null)); setActive(null); setMulti(null); }, [pid, typeId]);
 
   const save = async () => {
     setErr(null); setBusy(true);
@@ -38,7 +40,7 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
         test_type_id: type.id, player_id: Number(pid), date, protocol: type.protocol || '',
         device: `Vídeo · tiempo de vuelo · ${fps} fps`,
         values: { altura: r1(best), media: r1(mean) },
-        notes: `Análisis por vídeo (tiempo de vuelo, h = g·t²/8). Saltos: ${done.map((j, i) => `${i + 1}) ${fmtNum(j.h, 1)} cm · ${Math.round(j.T * 1000)} ms`).join(' | ')}`,
+        notes: `Análisis por vídeo (tiempo de vuelo, h = g·t²/8). Saltos: ${done.map((j, i) => `${i + 1}) ${fmtNum(j.h, 1)} cm · ${Math.round(j.T * 1000)} ms${j.edited ? ' (duración corregida)' : ''}`).join(' | ')}`,
       });
       toast('Test de salto guardado'); onSaved?.(); onClose();
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
@@ -60,16 +62,23 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
         <li>Móvil <b>fijo</b> (trípode o apoyado), en <b>horizontal</b>, a la altura del suelo y a unos 1,5–2 m, de frente o de lado.</li>
         <li>Que se vean <b>los pies en todo momento</b>, con buena luz y fondo liso, sin nadie pasando por detrás.</li>
         <li>El jugador empieza <b>quieto 1–2 s</b>, manos en la cadera, salta y aterriza en el mismo sitio con las piernas estiradas.</li>
-        <li>Un vídeo por salto, corto (3–6 s). El vídeo no se guarda: se analiza en este dispositivo y solo se guardan los resultados.</li>
+        <li>Protocolo recomendado: <b>un solo vídeo con los 3 saltos</b> y 5 s de descanso entre ellos (la grabación guiada marca los tiempos con pitidos). El jugador debe aterrizar en el mismo sitio y quedarse quieto entre saltos.</li>
+        <li>El vídeo no se guarda: se analiza en este dispositivo y solo se guardan los resultados.</li>
       </ul></details>
       {!pid ? <p className="muted small" style={{ margin: 0 }}>Elige el jugador para empezar.</p> : <>
+        <div className="card jl-proto"><div style={{ flex: 1 }}><b>Protocolo: {N} saltos en un solo vídeo</b><div className="small muted">{N} CMJ casi seguidos, con {REST_S} s de descanso entre uno y otro. La app encuentra los {N} vuelos, mide su duración (que puedes corregir) y calcula el salto más alto y la media.</div></div>
+          <ThreeJumpButtons disabled={!!multi || !!active} onGuided={() => setMulti('guided')} onFile={f => setMulti(f)} /></div>
+        {multi === 'guided' && <GuidedRecorder n={N} onCancel={() => setMulti(null)} onVideo={f => setMulti(f)} />}
+        {multi && multi !== 'guided' && <MultiJumpAnalyzer key={multi.name + multi.size} file={multi} n={N} label={type?.name}
+          onCancel={() => setMulti(null)} onDone={r => { setJumps(Array.from({ length: N }, (_, k) => r.jumps[k] ? { h: r.jumps[k].h, T: r.jumps[k].T, fps: r.fps, edited: r.jumps[k].edited } : null)); setMulti(null); }} />}
+        <div className="small muted">O bien, un vídeo por salto:</div>
         <div className="jl-slots">{jumps.map((j, i) => <div key={i} className={'jl-slot' + (active?.slot === i ? ' on' : '') + (j ? ' ok' : '')}>
           <span className="small muted">Salto {i + 1}</span>
           {j ? <b>{fmtNum(j.h, 1)} <small>cm</small></b> : <b className="muted">—</b>}
           {j && <span className="small muted">{Math.round(j.T * 1000)} ms · {j.fps} fps</span>}
           <div className="row" style={{ gap: 4, justifyContent: 'center' }}>
-            <button className="btn sm primary" disabled={!!active} onClick={() => open(i, 'rec')}>{j ? 'Repetir' : 'Grabar'}</button>
-            <button className="btn sm" disabled={!!active} onClick={() => open(i, 'pick')}>Adjuntar</button></div>
+            <button className="btn sm primary" disabled={!!active || !!multi} onClick={() => open(i, 'rec')}>{j ? 'Repetir' : 'Grabar'}</button>
+            <button className="btn sm" disabled={!!active || !!multi} onClick={() => open(i, 'pick')}>Adjuntar</button></div>
         </div>)}</div>
         {active && <JumpAnalyzer key={active.file.name + active.slot + active.file.size} file={active.file} slot={active.slot}
           onCancel={() => setActive(null)} onDone={res => { setJumps(js => js.map((x, k) => (k === active.slot ? res : x))); setActive(null); }} />}

@@ -112,3 +112,48 @@ export async function drawFrameAt(video, t, canvas, roi) {
   g.drawImage(video, 0, 0, canvas.width, canvas.height);
   if (roi) { g.strokeStyle = '#e30613'; g.lineWidth = 2; g.setLineDash([6, 4]); g.strokeRect(roi.x * canvas.width, roi.y * canvas.height, roi.w * canvas.width, roi.h * canvas.height); }
 }
+
+// ---------- Protocolo de 3 saltos en un solo vídeo (≈ 5 s de descanso entre saltos) ----------
+// La referencia es la imagen «de pie» más habitual en el vídeo (mediana de cada píxel), porque el jugador
+// pasa casi todo el tiempo apoyado. Se buscan los tramos en el aire y se devuelven los n más claros en orden.
+export function detectFlights(frames, scale = 1, n = 3) {
+  const N = frames.length;
+  if (N < 20) return { error: 'El vídeo es demasiado corto.', flights: [] };
+  const len = frames[0].d.length, base = new Float32Array(len);
+  const step = Math.max(1, Math.floor(N / 150)), sample = [];
+  for (let i = 0; i < N; i += step) sample.push(frames[i].d);
+  const col = new Array(sample.length);
+  for (let j = 0; j < len; j++) { for (let i = 0; i < sample.length; i++) col[i] = sample[i][j]; col.sort((a, b) => a - b); base[j] = col[col.length >> 1]; }
+  const diff = frames.map(f => { let s = 0; for (let j = 0; j < len; j++) s += Math.abs(f.d[j] - base[j]); return s / len; });
+  const sorted = [...diff].sort((a, b) => a - b), pct = q => sorted[Math.min(N - 1, Math.floor(q * N))];
+  const lo = pct(0.3), hi = pct(0.99);
+  if (hi - lo < 4) return { diff, flights: [], error: 'No se detecta movimiento en la zona de los pies. Ajusta el recuadro para que cubra solo las zapatillas apoyadas en el suelo.' };
+  const thr = lo + 0.45 * (hi - lo);
+  const segs = [];
+  for (let i = 1; i < N; i++) {
+    if (diff[i] > thr && diff[i - 1] <= thr) {
+      let j = i; while (j + 1 < N && diff[j + 1] > thr) j++;
+      if (j + 1 < N) segs.push({ takeoff: i, landing: j + 1, T: (frames[j + 1].t - frames[i].t) * scale, peak: Math.max(...diff.slice(i, j + 1)) });
+      i = j;
+    }
+  }
+  // Vuelos plausibles de CMJ; si dos tramos están muy juntos (rebote, recolocación) se queda el más largo
+  let ok = segs.filter(s => s.T >= 0.12 && s.T <= 1.0);
+  ok = ok.filter(s => !ok.some(o => o !== s && Math.abs(frames[o.takeoff].t - frames[s.takeoff].t) < 1.2 && o.T > s.T));
+  const flights = ok.sort((a, b) => b.T - a.T).slice(0, n).sort((a, b) => a.takeoff - b.takeoff);
+  const error = !flights.length ? 'No se ha encontrado ningún vuelo claro. Comprueba que se ven los pies en todo el vídeo.' :
+    flights.length < n ? `Solo se han encontrado ${flights.length} de ${n} saltos. Marca el resto a mano o revisa el recuadro.` : null;
+  return { diff, thr, flights, error, extra: Math.max(0, ok.length - n) };
+}
+
+// Vídeos grabados en el navegador (webm) a veces no indican su duración: se fuerza su cálculo
+export async function fixDuration(video) {
+  if (Number.isFinite(video.duration) && video.duration > 0) return;
+  await new Promise(res => {
+    const on = () => { if (Number.isFinite(video.duration)) { video.removeEventListener('durationchange', on); res(); } };
+    video.addEventListener('durationchange', on);
+    video.currentTime = 1e7;
+    setTimeout(res, 4000);
+  });
+  video.currentTime = 0;
+}

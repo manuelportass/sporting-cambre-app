@@ -145,3 +145,13 @@ export async function drawAt(video, t, canvas) {
   canvas.width = W; canvas.height = H;
   canvas.getContext('2d').drawImage(video, 0, 0, W, H);
 }
+
+// Recalcula una repetición con el inicio (st) y el final (en) de la fase concéntrica que marque el preparador
+export function repStats(out, st, en) {
+  const { t, h, v } = out;
+  if (en <= st) return null;
+  const rom = h[en] - h[st], dur = t[en] - t[st];
+  if (dur <= 0) return null;
+  let vp = 0, ip = st; for (let i = st; i <= en; i++) if (v[i] > vp) { vp = v[i]; ip = i; }
+  return { start: st, end: en, rom, dur, mcv: rom / dur, vpeak: vp, ipeak: ip };
+}

@@ -1,5 +1,5 @@
 'use strict';
-// Tests de evolución de lesionados (mensuales): movilidad (ángulo por foto), Y-Balance y fuerza.
+// Tests de evolución de lesionados (mensuales): movilidad (ángulo por foto), Y-Balance, fuerza, salto y perímetros.
 // Siempre lado lesionado frente a lado sano. LSI (índice de simetría) = lesionado / sano × 100.
 const { bad } = require('./util');
 
@@ -53,7 +53,24 @@ function clean(kind, b) {
   }
   if (kind === 'salto') {
     const les = n(b.les, 'altura del lado lesionado', 0, 100), sano = n(b.sano, 'altura del lado sano', 0, 100);
-    return { test: 'cmj_unilateral', les: r1(les), sano: r1(sano), lsi: lsi(les, sano), method: b.method === 'video' ? 'video' : 'manual' };
+    const opt = (v, l) => (v === '' || v === null || v === undefined ? null : r1(n(v, l, 0, 100)));
+    const saltos = x => (Array.isArray(x) ? x.slice(0, 5).map(j => ({ h: r1(n(j?.h, 'altura de un salto', 0, 100)), ms: Math.round(n(j?.ms, 'duración de un salto', 50, 1500)) })) : null);
+    const les_media = opt(b.les_media, 'media del lado lesionado'), sano_media = opt(b.sano_media, 'media del lado sano');
+    return { test: 'cmj_unilateral', les: r1(les), sano: r1(sano), lsi: lsi(les, sano), les_media, sano_media, lsi_media: lsi(les_media, sano_media),
+      saltos_les: saltos(b.saltos_les), saltos_sano: saltos(b.saltos_sano), method: b.method === 'video' ? 'video' : 'manual' };
+  }
+  if (kind === 'perimetro') {
+    // Perímetros (cm) de muslo y gemelo, lado lesionado frente a sano. LSI = lesionado / sano × 100
+    const seg = (o, nm) => {
+      const empty = x => x === '' || x === null || x === undefined;
+      if (!o || (empty(o.les) && empty(o.sano))) return null;
+      const les = n(o.les, `perímetro de ${nm} (lado lesionado)`, 10, 120), sano = n(o.sano, `perímetro de ${nm} (lado sano)`, 10, 120);
+      const alt = empty(o.alt) ? null : n(o.alt, `altura de medición del ${nm}`, 0, 40);
+      return { les: r1(les), sano: r1(sano), diff: r1(les - sano), lsi: lsi(les, sano), alt };
+    };
+    const muslo = seg(b.muslo, 'muslo'), gemelo = seg(b.gemelo, 'gemelo');
+    if (!muslo && !gemelo) throw bad('Introduce al menos el perímetro del muslo o del gemelo.');
+    return { muslo, gemelo };
   }
   throw bad('Tipo de test no válido.');
 }

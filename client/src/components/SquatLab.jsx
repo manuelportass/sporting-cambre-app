@@ -1,8 +1,8 @@
 // Sentadilla: 1RM estimado (Brzycki, 1993) + velocidad de la barra por vídeo al 20-40-60-80 % del 1RM → curva carga–velocidad
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ResponsiveContainer, ComposedChart, LineChart, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea } from 'recharts';
+import { ResponsiveContainer, ComposedChart, LineChart, Line, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, ReferenceDot } from 'recharts';
 import { api } from '../api';
-import { BRZYCKI, PCTS, analyze, frameSize, linfit, loadFor, trackBar } from '../lib/bar';
+import { BRZYCKI, PCTS, analyze, drawAt, frameSize, linfit, loadFor, repStats, trackBar } from '../lib/bar';
 import { fmtDate, fmtNum, todayISO } from '../lib/format';
 import { ErrorBox, Field, Modal, useApi, useToast } from './ui';
 
@@ -36,6 +36,8 @@ export default function SquatLab({ types, onClose, onSaved }) {
   const onFile = e => { const f = e.target.files[0]; e.target.value = ''; if (f) setActive({ pct: slotRef.current, file: f }); };
   const pts = PCTS.filter(p => res[p]).map(p => ({ pct: p, load: loadFor(rm, p), v: res[p].mcv }));
   const fit = linfit(pts.map(p => p.load), pts.map(p => p.v));
+  const ptsMax = PCTS.filter(p => res[p]).map(p => ({ pct: p, load: loadFor(rm, p), v: res[p].vmax }));
+  const fitMax = linfit(ptsMax.map(p => p.load), ptsMax.map(p => p.v));
   const save = async () => {
     setErr(null); setBusy(true);
     try {
@@ -43,8 +45,8 @@ export default function SquatLab({ types, onClose, onSaved }) {
       await api.post('/team/tests', {
         test_type_id: lvType.id, player_id: Number(pid), date, protocol: lvType.protocol,
         device: `Vídeo · seguimiento de barra · ${[...new Set(PCTS.map(p => res[p]?.fps).filter(Boolean))].join('/')} fps`,
-        values: { v20: r2(res[20].mcv), v40: r2(res[40].mcv), v60: r2(res[60].mcv), v80: r2(res[80].mcv), rm },
-        notes: `1RM ${fmtNum(rm, 1)} kg (${fmtDate(lastRm.date)}). ` + PCTS.map(p => `${p} % = ${fmtNum(loadFor(rm, p), 1)} kg: VMC media ${fmtNum(res[p].mcv, 2)} m/s (${res[p].n} rep.: ${res[p].list.map(x => fmtNum(x, 2)).join(' / ')}) · pico medio ${fmtNum(res[p].vpeak, 2)} m/s · ${Math.round(res[p].rom * 100)} cm`).join(' | ')
+        values: { v20: r2(res[20].mcv), v40: r2(res[40].mcv), v60: r2(res[60].mcv), v80: r2(res[80].mcv), p20: r2(res[20].vmax), p40: r2(res[40].vmax), p60: r2(res[60].vmax), p80: r2(res[80].vmax), rm },
+        notes: `1RM ${fmtNum(rm, 1)} kg (${fmtDate(lastRm.date)}). ` + PCTS.map(p => `${p} % = ${fmtNum(loadFor(rm, p), 1)} kg: v. media ${fmtNum(res[p].mcv, 2)} m/s · v. máxima ${fmtNum(res[p].vmax, 2)} m/s (${res[p].n} rep. VMC/pico: ${res[p].reps.map(x => `${fmtNum(x.mcv, 2)}/${fmtNum(x.vpeak, 2)}`).join(' · ')}) · ${Math.round(res[p].rom * 100)} cm`).join(' | ')
           + (fit ? ` | Recta: v = ${fmtNum(fit.icpt, 3)} ${fit.slope < 0 ? '−' : '+'} ${fmtNum(Math.abs(fit.slope), 4)}·kg (R² ${fmtNum(fit.r2, 2)})` : ''),
       });
       toast('Perfil carga–velocidad guardado'); onSaved?.(); onClose();
@@ -79,28 +81,32 @@ export default function SquatLab({ types, onClose, onSaved }) {
           <details className="jl-tips"><summary>Cómo grabar</summary><ul className="small">
             <li>Móvil <b>fijo</b> (trípode), en horizontal, <b>de lado</b> y perpendicular a la barra, a la altura de la barra con el jugador de pie, a unos 2–3 m.</li>
             <li>Que se vea el <b>disco entero</b> durante toda la repetición; discos de 45 cm si es posible (si no, indica su diámetro).</li>
-            <li>Cámara lenta (60–240 fps) si se puede. <b>{REPS} repeticiones seguidas en el mismo vídeo</b>, a la <b>máxima velocidad intencional</b> en la subida: se usa la media de las {REPS}.</li>
+            <li>Cámara lenta (60–240 fps) si se puede. <b>{REPS} repeticiones consecutivas en el mismo vídeo</b> por carga, a la <b>máxima velocidad intencional</b> en la subida. La app marca las {REPS} repeticiones y los puntos de inicio y final de cada subida (puedes corregirlos) y calcula la velocidad media y la máxima.</li>
             <li>El vídeo no se guarda: se analiza en este dispositivo.</li>
           </ul></details>
           <div className="sq-loads">{PCTS.map(p => <div key={p} className={'sq-load' + (res[p] ? ' ok' : '') + (active?.pct === p ? ' on' : '')}>
             <span className="sq-pct">{p} %</span><b>{fmtNum(loadFor(rm, p), 1)} <small>kg</small></b>
-            <span className="small">{res[p] ? <>VMC media <b>{fmtNum(res[p].mcv, 2)}</b> m/s · {res[p].n} rep.</> : <span className="muted">Sin grabar · {REPS} rep.</span>}</span>
+            <span className="small">{res[p] ? <>Media <span className="sq-v">{fmtNum(res[p].mcv, 2)}</span> · máx. <span className="sq-v">{fmtNum(res[p].vmax, 2)}</span> m/s · {res[p].n} rep.</> : <span className="muted">Sin grabar · {REPS} rep.</span>}</span>
             <div className="row" style={{ gap: 4, justifyContent: 'center' }}><button className="btn sm primary" disabled={!!active} onClick={() => open(p, 'rec')}>{res[p] ? 'Repetir' : 'Grabar'}</button><button className="btn sm" disabled={!!active} onClick={() => open(p, 'pick')}>Adjuntar</button></div>
           </div>)}</div>
           {active && <BarAnalyzer key={active.file.name + active.pct + active.file.size} file={active.file} title={`${active.pct} % · ${fmtNum(loadFor(rm, active.pct), 1)} kg`}
             onCancel={() => setActive(null)} onDone={r => { setRes(o => ({ ...o, [active.pct]: r })); setActive(null); }} />}
         </div>}
-        {pts.length > 0 && <div className="card"><h3>3 · Curva carga–velocidad</h3><LVChart pts={pts} fit={fit} rm={rm} />
-          {fit && <div className="sq-fit small"><span>Recta: <b>v = {fmtNum(fit.icpt, 2)} {fit.slope < 0 ? '−' : '+'} {fmtNum(Math.abs(fit.slope), 4)} × carga</b> (m/s; carga en kg)</span><span>R² <b>{fmtNum(fit.r2, 2)}</b></span>
-            <span>Pérdida de velocidad por cada 10 kg: <b>{fmtNum(Math.abs(fit.slope * 10), 3)} m/s</b></span></div>}
-          <p className="small muted" style={{ margin: '6px 0 0' }}>Cada punto es la media de la velocidad media concéntrica (VMC) de las {REPS} repeticiones de esa carga. {PCTS.some(p => !res[p]) ? 'Graba las cuatro cargas para guardar el perfil.' : ''}</p></div>}
+        {pts.length > 0 && <div className="grid g2" style={{ alignItems: 'start' }}>
+          {[['Velocidad máxima', ptsMax, fitMax, 'Velocidad pico más alta de las 5 repeticiones de cada carga.'], ['Velocidad media', pts, fit, 'Media de la velocidad media concéntrica (VMC) de las 5 repeticiones de cada carga.']].map(([t, P, F, note]) => <div key={t} className="card"><h3 style={{ marginTop: 0 }}>3 · {t}</h3><LVChart pts={P} fit={F} rm={rm} height={220} label={t} />
+            {F && <div className="sq-fit small"><span>v = <b>{fmtNum(F.icpt, 2)} {F.slope < 0 ? '−' : '+'} {fmtNum(Math.abs(F.slope), 4)} × kg</b></span><span>R² <b>{fmtNum(F.r2, 2)}</b></span><span>−{fmtNum(Math.abs(F.slope * 10), 3)} m/s cada 10 kg</span></div>}
+            <p className="small muted" style={{ margin: '6px 0 0' }}>{note}</p></div>)}
+          </div>}
+        {pts.length > 0 && <div className="card"><h3 style={{ marginTop: 0 }}>Repeticiones por carga</h3><div className="table-wrap"><table className="t small"><thead><tr><th>Carga</th>{Array.from({ length: REPS }, (_, k) => <th key={k} className="n">Rep. {k + 1}<br /><span className="muted">VMC / pico</span></th>)}<th className="n">Media</th><th className="n">Máxima</th></tr></thead>
+          <tbody>{PCTS.filter(p => res[p]).map(p => <tr key={p}><td>{p} % · {fmtNum(loadFor(rm, p), 1)} kg</td>{Array.from({ length: REPS }, (_, k) => { const r = res[p].reps[k]; return <td key={k} className="n">{r ? <>{fmtNum(r.mcv, 2)} / {fmtNum(r.vpeak, 2)}</> : '—'}</td>; })}<td className="n"><b>{fmtNum(res[p].mcv, 2)}</b></td><td className="n"><b>{fmtNum(res[p].vmax, 2)}</b></td></tr>)}</tbody></table></div>
+          {PCTS.some(p => !res[p]) && <p className="small muted" style={{ margin: '6px 0 0' }}>Graba las cuatro cargas para guardar el perfil.</p>}</div>}
       </>}
       <ErrorBox error={err} />
     </div>
   </Modal>;
 }
 
-export function LVChart({ pts, fit, rm, height = 240, prev }) {
+export function LVChart({ pts, fit, rm, height = 240, prev, label = 'VMC' }) {
   const xs = pts.map(p => p.load), x0 = 0, x1 = Math.ceil((rm || Math.max(...xs)) / 10) * 10;
   const line = fit ? [{ load: x0, fit: fit.icpt }, { load: x1, fit: Math.max(0, fit.icpt + fit.slope * x1) }] : [];
   return <ResponsiveContainer width="100%" height={height}>
@@ -108,7 +114,7 @@ export function LVChart({ pts, fit, rm, height = 240, prev }) {
       <CartesianGrid stroke="#ecede8" />
       <XAxis type="number" dataKey="load" domain={[0, x1]} unit=" kg" stroke="#9a9b95" fontSize={11} tickLine={false} />
       <YAxis type="number" domain={[0, 'auto']} unit=" m/s" stroke="#9a9b95" fontSize={11} tickLine={false} width={64} />
-      <Tooltip formatter={(v, n) => [fmtNum(v, 2) + ' m/s', n === 'fit' ? 'Recta' : n === 'prev' ? 'Anterior' : 'VMC']} labelFormatter={v => `${fmtNum(v, 1)} kg`} />
+      <Tooltip formatter={(v, n) => [fmtNum(v, 2) + ' m/s', n === 'fit' ? 'Recta' : n === 'prev' ? 'Anterior' : label]} labelFormatter={v => `${fmtNum(v, 1)} kg`} />
       {prev?.length > 0 && <Scatter data={prev} dataKey="prev" fill="#c9cac4" isAnimationActive={false} />}
       {fit && <Line data={line} dataKey="fit" stroke="#2a78d6" strokeWidth={2} strokeDasharray="6 4" dot={false} isAnimationActive={false} />}
       <Scatter data={pts.map(p => ({ load: p.load, v: p.v }))} dataKey="v" fill="#e30613" isAnimationActive={false} />
@@ -129,7 +135,10 @@ function BarAnalyzer({ file, title, onDone, onCancel }) {
   const [realFps, setRealFps] = useState('');
   const [prog, setProg] = useState(0);
   const [out, setOut] = useState(null);
-  const [on, setOn] = useState([]); // repeticiones incluidas en la media
+  const [marks, setMarks] = useState([]); // [{ start, end, on }] inicio y final de cada fase concéntrica (editables)
+  const [sel, setSel] = useState(0);
+  const [raw, setRaw] = useState(null); // trayectoria en píxeles y tiempos del vídeo
+  const cS = useRef(null), cE = useRef(null);
   const [err, setErr] = useState(null);
   const onMeta = () => { try { video.current.currentTime = Math.min(0.1, video.current.duration / 2); } catch { /* */ } setStage('calib'); };
   const P = e => { const r = box.current.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
@@ -145,16 +154,44 @@ function BarAnalyzer({ file, title, onDone, onCancel }) {
       const tr = await trackBar(video.current, pt, { onProgress: setProg, signal: ctl, plateRadiusPx: len / 2 });
       const scale = Number(realFps) > 0 ? tr.fps / Number(realFps) : 1;
       const a = analyze(tr.pts, Number(diam) / 100 / len, scale);
-      setOut({ ...a, fps: Number(realFps) > 0 ? Number(realFps) : tr.fps }); setOn((a.reps || []).map((_, i) => i));
+      setOut({ ...a, fps: Number(realFps) > 0 ? Number(realFps) : tr.fps }); setRaw(tr);
+      setMarks((a.reps || []).slice(0, 8).map(r => ({ start: r.start, end: r.end, on: true }))); setSel(0);
       if (a.error) setErr(a.error);
       setStage('review');
     } catch (e) { if (e.message !== 'Cancelado') setErr('No se ha podido leer el vídeo en este navegador.'); setStage('calib'); }
   };
   useEffect(() => () => { if (abort.current) abort.current.aborted = true; }, []);
   const ok = line && pxLen() > 10 && pt && Number(diam) > 0;
-  const chosen = (out?.reps || []).filter((_, i) => on.includes(i));
+  const stats = out?.t ? marks.map(m => ({ ...repStats(out, m.start, m.end), on: m.on })) : [];
+  const chosen = stats.filter(r => r.on && r.mcv != null);
   const avg = k => chosen.length ? chosen.reduce((x, r) => x + r[k], 0) / chosen.length : null;
-  const rep = chosen.length ? { mcv: avg('mcv'), vpeak: avg('vpeak'), rom: avg('rom'), dur: avg('dur'), n: chosen.length, best: Math.max(...chosen.map(r => r.mcv)), list: chosen.map(r => r.mcv) } : null;
+  const rep = chosen.length ? { mcv: avg('mcv'), vpeak: avg('vpeak'), vmax: Math.max(...chosen.map(r => r.vpeak)), rom: avg('rom'), dur: avg('dur'), n: chosen.length, best: Math.max(...chosen.map(r => r.mcv)), reps: chosen.map(r => ({ mcv: r.mcv, vpeak: r.vpeak, rom: r.rom })) } : null;
+  const nudge = (k, w, d) => setMarks(o => o.map((m, i) => { if (i !== k) return m; const v = Math.max(0, Math.min(out.t.length - 1, m[w] + d)); return w === 'start' ? { ...m, start: Math.min(v, m.end - 2) } : { ...m, end: Math.max(v, m.start + 2) }; }));
+  const addRep = () => {
+    const n = out.t.length, used = marks.flatMap(m => [m.start, m.end]).sort((a, b) => a - b), cuts = [0, ...used, n - 1];
+    let gi = 0, gl = -1; for (let i = 0; i + 1 < cuts.length; i++) if (cuts[i + 1] - cuts[i] > gl) { gl = cuts[i + 1] - cuts[i]; gi = i; }
+    let lo = cuts[gi], hi = cuts[gi + 1], a = lo, b = hi;
+    for (let i = lo; i <= hi; i++) if (out.h[i] < out.h[a]) a = i;
+    for (let i = a; i <= hi; i++) if (out.h[i] > out.h[b] || b < a) b = i;
+    if (b - a < 3) { a = lo; b = Math.min(hi, lo + 10); }
+    setMarks(o => [...o, { start: a, end: b, on: true }].sort((x, y) => x.start - y.start));
+  };
+  // Fotogramas de inicio y final de la repetición seleccionada, con el punto seguido
+  const mk = marks[sel];
+  useEffect(() => {
+    if (stage !== 'review' || !raw || !mk) return;
+    let off = false;
+    (async () => {
+      const v = video.current; v.pause();
+      for (const [c, i] of [[cS.current, mk.start], [cE.current, mk.end]]) {
+        if (off || !c) return;
+        await drawAt(v, raw.pts[i].t, c);
+        const g = c.getContext('2d'); g.strokeStyle = '#e30613'; g.lineWidth = 2; g.beginPath(); g.arc(raw.pts[i].x, raw.pts[i].y, 9, 0, 7); g.stroke();
+        g.beginPath(); g.moveTo(0, raw.pts[i].y); g.lineTo(c.width, raw.pts[i].y); g.setLineDash([5, 4]); g.stroke(); g.setLineDash([]);
+      }
+    })();
+    return () => { off = true; };
+  }, [stage, raw, sel, mk?.start, mk?.end]); // eslint-disable-line
   const series = out?.t ? out.t.map((t, i) => ({ t, h: out.h[i] * 100, v: out.v[i] })) : [];
 
   return <div className="card jl-an">
@@ -184,26 +221,37 @@ function BarAnalyzer({ file, title, onDone, onCancel }) {
       {series.length > 0 && <ResponsiveContainer width="100%" height={180}><LineChart data={series} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="#ecede8" /><XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={v => fmtNum(v, 1) + ' s'} stroke="#9a9b95" fontSize={10} />
         <YAxis yAxisId="h" stroke="#9a9b95" fontSize={10} width={40} unit=" cm" /><YAxis yAxisId="v" orientation="right" stroke="#9a9b95" fontSize={10} width={46} unit=" m/s" />
-        {(out.reps || []).map((r, i) => <ReferenceArea key={i} yAxisId="h" x1={out.t[r.start]} x2={out.t[r.end]} fill={on.includes(i) ? '#e30613' : '#9a9b95'} fillOpacity={on.includes(i) ? 0.1 : 0.08} />)}
+        {marks.map((m, i) => <ReferenceArea key={i} yAxisId="h" x1={out.t[m.start]} x2={out.t[m.end]} fill={m.on ? '#e30613' : '#9a9b95'} fillOpacity={i === sel ? 0.22 : m.on ? 0.1 : 0.06} label={{ value: String(i + 1), position: 'insideTop', fontSize: 11, fontWeight: 700 }} />)}
+        {marks.map((m, i) => <ReferenceDot key={'s' + i} yAxisId="h" x={out.t[m.start]} y={out.h[m.start] * 100} r={4} fill="#2e9e4f" stroke="#fff" />)}
+        {marks.map((m, i) => <ReferenceDot key={'e' + i} yAxisId="h" x={out.t[m.end]} y={out.h[m.end] * 100} r={4} fill="#e30613" stroke="#fff" />)}
         <Line yAxisId="h" dataKey="h" stroke="#111511" dot={false} strokeWidth={2} isAnimationActive={false} />
         <Line yAxisId="v" dataKey="v" stroke="#2a78d6" dot={false} strokeWidth={1.5} isAnimationActive={false} />
       </LineChart></ResponsiveContainer>}
       <div className="small muted"><span style={{ color: '#111511' }}>━</span> altura de la barra · <span style={{ color: '#2a78d6' }}>━</span> velocidad · zonas rojas = subidas que entran en la media</div>
-      {out.reps?.length > 0 && <div className="stack" style={{ gap: 4 }}><span className="small"><b>{out.reps.length} repeticiones detectadas.</b> Toca una para quitarla de la media (o volver a incluirla).</span>
-        <div className="row" style={{ gap: 6 }}>{out.reps.map((r, i) => <button key={i} className={'btn sm' + (on.includes(i) ? ' primary' : '')} onClick={() => setOn(o => (o.includes(i) ? o.filter(x => x !== i) : [...o, i].sort((a, b) => a - b)))}>Rep. {i + 1} · {fmtNum(r.mcv, 2)} m/s</button>)}</div></div>}
-      {out.reps?.length > 0 && out.reps.length !== REPS && <div className="alert warn small"><span>⚠</span><div>Se esperaban {REPS} repeticiones y se han detectado {out.reps.length}. Revisa el vídeo (que se vea el disco en todas) o quita las que no correspondan.</div></div>}
+      <div className="small muted"><span style={{ color: '#2e9e4f' }}>●</span> inicio de la subida (punto más bajo) · <span style={{ color: '#e30613' }}>●</span> final (punto más alto). Toca una repetición para revisar sus puntos.</div>
+      {marks.length > 0 && <div className="table-wrap"><table className="t small sq-reps"><thead><tr><th>Rep.</th><th className="n">Recorrido</th><th className="n">Duración</th><th className="n">V. media (VMC)</th><th className="n">V. máxima (pico)</th><th>En el cálculo</th><th /></tr></thead>
+        <tbody>{stats.map((r, i) => <tr key={i} className={i === sel ? 'sel' : ''} onClick={() => setSel(i)}>
+          <td><b>{i + 1}</b></td><td className="n">{r.rom != null ? Math.round(r.rom * 100) + ' cm' : '—'}</td><td className="n">{r.dur != null ? fmtNum(r.dur, 2) + ' s' : '—'}</td>
+          <td className="n"><b>{r.mcv != null ? fmtNum(r.mcv, 2) : '—'}</b></td><td className="n">{r.vpeak != null ? fmtNum(r.vpeak, 2) : '—'}</td>
+          <td><input type="checkbox" checked={r.on} onClick={e => e.stopPropagation()} onChange={() => setMarks(o => o.map((m, k) => (k === i ? { ...m, on: !m.on } : m)))} /></td>
+          <td><button className="btn xs ghost" onClick={e => { e.stopPropagation(); setMarks(o => o.filter((_, k) => k !== i)); setSel(0); }} aria-label="Quitar">×</button></td></tr>)}</tbody></table></div>}
+      {marks.length !== REPS && <div className="alert warn small"><span>⚠</span><div>Se esperan {REPS} repeticiones y hay {marks.length}. {marks.length < REPS ? 'Puedes añadir una a mano y ajustar sus puntos.' : 'Quita las que no correspondan.'}</div></div>}
+      {marks.length < 8 && <div><button className="btn sm" onClick={addRep}>+ Añadir repetición a mano</button></div>}
+      {mk && <div className="card sq-adj"><b className="small">Repetición {sel + 1} · puntos exactos de la fase concéntrica</b>
+        <div className="mj-fr">{[['start', 'Inicio (abajo)', cS], ['end', 'Final (arriba)', cE]].map(([w, l, ref]) => <div key={w}><span className="small muted">{l} · {fmtNum(out.t[mk[w]], 2)} s</span><canvas ref={ref} />
+          <div className="row" style={{ gap: 3 }}><button className="btn xs" onClick={() => nudge(sel, w, -5)}>«</button><button className="btn xs" onClick={() => nudge(sel, w, -1)}>‹ fotograma</button><button className="btn xs" onClick={() => nudge(sel, w, 1)}>fotograma ›</button><button className="btn xs" onClick={() => nudge(sel, w, 5)}>»</button></div></div>)}</div></div>}
       {rep && <div className="jl-res">
-        <div><small>VMC · media de {rep.n} rep.</small><b>{fmtNum(rep.mcv, 2)} <small>m/s</small></b></div>
-        <div><small>Mejor repetición</small><b>{fmtNum(rep.best, 2)} <small>m/s</small></b></div>
-        <div><small>Velocidad pico (media)</small><b>{fmtNum(rep.vpeak, 2)} <small>m/s</small></b></div>
+        <div><small>Velocidad media · {rep.n} rep.</small><b>{fmtNum(rep.mcv, 2)} <small>m/s</small></b></div>
+        <div><small>Velocidad máxima</small><b>{fmtNum(rep.vmax, 2)} <small>m/s</small></b></div>
+        <div><small>Mejor VMC</small><b>{fmtNum(rep.best, 2)} <small>m/s</small></b></div>
         <div><small>Recorrido medio</small><b>{Math.round(rep.rom * 100)} <small>cm</small></b></div>
         <div><small>Vídeo</small><b>{out.fps} <small>fps</small></b></div>
       </div>}
       {rep && (rep.rom < 0.3 || rep.rom > 0.9) && <div className="alert warn small"><span>⚠</span><div>Recorrido medio poco habitual para una sentadilla ({Math.round(rep.rom * 100)} cm): revisa el diámetro del disco y que el punto siga el extremo de la barra.</div></div>}
       {err && <div className="alert warn small"><span>⚠</span><div>{err}</div></div>}
       <div className="row">
-        <button className="btn" onClick={() => { setStage('calib'); setOut(null); setErr(null); }}>Volver a marcar y analizar</button>
-        <button className="btn primary" disabled={!rep} onClick={() => onDone({ mcv: rep.mcv, vpeak: rep.vpeak, rom: rep.rom, n: rep.n, best: rep.best, list: rep.list, fps: out.fps })}>Usar la media ({rep ? fmtNum(rep.mcv, 2) : '—'} m/s)</button>
+        <button className="btn" onClick={() => { setStage('calib'); setOut(null); setRaw(null); setMarks([]); setErr(null); }}>Volver a marcar y analizar</button>
+        <button className="btn primary" disabled={!rep} onClick={() => onDone({ mcv: rep.mcv, vmax: rep.vmax, vpeak: rep.vpeak, rom: rep.rom, n: rep.n, best: rep.best, reps: rep.reps, list: rep.reps.map(r => r.mcv), fps: out.fps })}>Usar: media {rep ? fmtNum(rep.mcv, 2) : '—'} · máx. {rep ? fmtNum(rep.vmax, 2) : '—'} m/s</button>
       </div>
     </div>}
     {stage !== 'review' && err && <ErrorBox error={err} />}
