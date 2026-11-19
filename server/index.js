@@ -16,8 +16,11 @@ function createApp() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'same-origin');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'");
+    // Cámara solo para la propia app (fotos de jugadores, grabación guiada de saltos)
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+    // media-src blob: → abrir en el navegador los vídeos elegidos del dispositivo (análisis de saltos y sentadilla).
+    // 'wasm-unsafe-eval' → solo permite WebAssembly (conversor de vídeo y detección de puntos de movilidad), no eval de JavaScript.
+    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' data: blob:; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'");
     if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
     next();
   });
