@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { MultiLine } from './charts';
-import { JumpAnalyzer } from './JumpLab';
 import { GuidedRecorder, MultiJumpAnalyzer, ThreeJumpButtons } from './JumpProtocol';
 import { Confirm, Empty, ErrorBox, Field, Modal, Seg, useToast } from './ui';
 import { fmtDate, fmtNum, todayISO } from '../lib/format';
@@ -183,7 +182,7 @@ function AddTest({ kind, injury, names, onClose, onSaved }) {
       {kind === 'salto' && <>
         <input ref={recV} type="file" accept="video/*" capture="environment" hidden onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) setVid({ side: vidSide.current, file: f }); }} />
         <input ref={pickV} type="file" accept="video/*" hidden onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) setVid({ side: vidSide.current, file: f }); }} />
-        <p className="small muted" style={{ margin: 0 }}>Protocolo: 3 CMJ a una pierna casi seguidos (5 s de descanso) en un solo vídeo por pierna. La app mide la duración de cada vuelo y guarda el salto más alto y la media. También puedes escribir la altura a mano.</p>
+        <p className="small muted" style={{ margin: 0 }}>Protocolo: 3 CMJ a una pierna casi seguidos (5 s de descanso) en un solo vídeo por pierna. En el visor marcas el despegue y el aterrizaje de cada salto y la app calcula el salto más alto y la media. También puedes escribir la altura a mano.</p>
         <div className="it-sides">{['les', 'sano'].map(sd => <div key={sd} className="it-side"><b>{names[sd]}</b>
           <ThreeJumpButtons disabled={!!vid || !!mj} onGuided={() => setMj({ side: sd, file: 'guided' })} onFile={f => setMj({ side: sd, file: f })} />
           <div className="row" style={{ gap: 8, alignItems: 'flex-end' }}><Field label="Más alto (cm)"><input type="number" min="0" max="100" step="0.1" value={d[sd]} onChange={e => setD({ ...d, [sd]: e.target.value })} style={{ maxWidth: 110 }} /></Field>
@@ -193,8 +192,8 @@ function AddTest({ kind, injury, names, onClose, onSaved }) {
         {mj?.file === 'guided' && <GuidedRecorder onCancel={() => setMj(null)} onVideo={f => setMj(o => ({ ...o, file: f }))} />}
         {mj && mj.file !== 'guided' && <MultiJumpAnalyzer key={mj.file.name + mj.side + mj.file.size} file={mj.file} label={`CMJ · ${names[mj.side]}`} onCancel={() => setMj(null)}
           onDone={r => { const r1 = x => String(Math.round(x * 10) / 10); setD(o => ({ ...o, [mj.side]: r1(r.best), [mj.side + '_media']: r1(r.mean), ['saltos_' + mj.side]: r.jumps.map(j => ({ h: Math.round(j.h * 10) / 10, ms: Math.round(j.T * 1000) })), method: 'video' })); setMj(null); }} />}
-        {vid && <JumpAnalyzer key={vid.file.name + vid.side + vid.file.size} file={vid.file} slot={0} label={`CMJ · ${names[vid.side]}`} onCancel={() => setVid(null)}
-          onDone={r => { setD(o => ({ ...o, [vid.side]: String(Math.round(r.h * 10) / 10), method: 'video' })); setVid(null); }} />}
+        {vid && <MultiJumpAnalyzer key={vid.file.name + vid.side + vid.file.size} file={vid.file} n={1} label={`CMJ · ${names[vid.side]}`} onCancel={() => setVid(null)}
+          onDone={r => { setD(o => ({ ...o, [vid.side]: String(Math.round(r.jumps[0].h * 10) / 10), method: 'video' })); setVid(null); }} />}
         <div className="it-res"><Lsi v={lsi(d.les, d.sano)} /></div>
       </>}
 
