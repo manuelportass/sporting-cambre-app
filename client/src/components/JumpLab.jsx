@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { densify, detectFlight, drawFrameAt, extractFrames, frameErrorCm, heightCm } from '../lib/jump';
 import { fmtNum, todayISO } from '../lib/format';
+import { usePlayableVideo } from '../lib/convert';
+import VideoConvert from './VideoConvert';
 import { ErrorBox, Field, Modal, useApi, useToast } from './ui';
 import { GuidedRecorder, MultiJumpAnalyzer, REST_S, ThreeJumpButtons } from './JumpProtocol';
 
@@ -95,8 +97,7 @@ export default function JumpLab({ types, initialTypeId, onClose, onSaved }) {
 
 // Analiza un vídeo: zona de los pies → recorrido de fotogramas → despegue/aterrizaje (corregibles) → altura
 export function JumpAnalyzer({ file, slot, label, onDone, onCancel }) {
-  const url = useMemo(() => URL.createObjectURL(file), [file]);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  const src = usePlayableVideo(file), url = src.url;
   const video = useRef(null), box = useRef(null), cT = useRef(null), cL = useRef(null);
   const [stage, setStage] = useState('load'); // load | roi | run | review
   const [roi, setRoi] = useState(DEF_ROI);
@@ -109,7 +110,7 @@ export function JumpAnalyzer({ file, slot, label, onDone, onCancel }) {
   const abort = useRef(null);
   const drag = useRef(null);
 
-  const onMeta = async () => { try { video.current.currentTime = Math.min(0.1, video.current.duration / 2); } catch { /* */ } setStage('roi'); };
+  const onMeta = async () => { if (!src.checkMeta(video.current)) return; try { video.current.currentTime = Math.min(0.1, video.current.duration / 2); } catch { /* */ } setStage('roi'); };
   const pt = e => { const r = box.current.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
   const down = e => { if (stage !== 'roi') return; e.preventDefault(); box.current.setPointerCapture?.(e.pointerId); drag.current = pt(e); };
   const move = e => { if (!drag.current) return; const a = drag.current, b = pt(e); const r = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }; if (r.w > 0.03 && r.h > 0.02) setRoi(r); };
@@ -148,9 +149,10 @@ export function JumpAnalyzer({ file, slot, label, onDone, onCancel }) {
 
   return <div className="card jl-an">
     <div className="row between"><h3 style={{ margin: 0 }}>{label || `Salto ${slot + 1}`} · {file.name}</h3><button className="btn sm ghost" onClick={() => { if (abort.current) abort.current.aborted = true; onCancel(); }}>Cancelar</button></div>
-    <div className="jl-stage" style={{ display: stage === 'review' ? 'none' : undefined }}>
+    <VideoConvert src={src} />
+    <div className="jl-stage" style={{ display: stage === 'review' || src.state !== 'ok' ? 'none' : undefined }}>
       <div ref={box} className="jl-vid" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-        <video ref={video} src={url} muted playsInline preload="auto" onLoadedMetadata={onMeta} onError={() => setErr('Este navegador no puede abrir el vídeo.')} />
+        <video ref={video} src={url} muted playsInline preload="auto" onLoadedMetadata={onMeta} onError={src.fail} />
         {stage !== 'load' && <div className="jl-roi" style={{ left: roi.x * 100 + '%', top: roi.y * 100 + '%', width: roi.w * 100 + '%', height: roi.h * 100 + '%' }}><span>Pies</span></div>}
       </div>
       {stage === 'roi' && <div className="stack" style={{ gap: 8 }}>

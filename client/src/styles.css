@@ -1130,3 +1130,5 @@ ul.refs li { margin: 4px 0; }
 .sq-reps tr.sel td { background: #fdecec; }
 .sq-adj { display: flex; flex-direction: column; gap: 8px; }
 .sq-v { font-weight: 700; }
+.intro-play { position: absolute; left: 50%; bottom: calc(22% + env(safe-area-inset-bottom)); transform: translateX(-50%); border: 0; border-radius: 99px; padding: 12px 22px; background: #e30613; color: #fff; font: 700 15px var(--body, inherit); box-shadow: 0 6px 20px rgba(0,0,0,.25); cursor: pointer; }
+.conv { display: flex; flex-direction: column; gap: 6px; }

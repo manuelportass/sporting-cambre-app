@@ -1,0 +1,5 @@
+Conversor de vídeo usado por la app cuando el navegador no puede abrir un vídeo (p. ej. HEVC de iPhone).
+ffmpeg.wasm · @ffmpeg/core 0.12.10 · licencia GPL-2.0-or-later.
+Código fuente: https://github.com/ffmpegwasm/ffmpeg.wasm (y https://ffmpeg.org).
+ffmpeg-core.wasm está dividido en dos partes (ffmpeg-core-1.wasm y ffmpeg-core-2.wasm) para poder subirlo a GitHub
+desde el navegador (límite de 25 MB por archivo); la app las une al usarlo.

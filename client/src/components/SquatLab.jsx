@@ -4,6 +4,8 @@ import { ResponsiveContainer, ComposedChart, LineChart, Line, Scatter, XAxis, YA
 import { api } from '../api';
 import { BRZYCKI, PCTS, analyze, drawAt, frameSize, linfit, loadFor, repStats, trackBar } from '../lib/bar';
 import { fmtDate, fmtNum, todayISO } from '../lib/format';
+import { usePlayableVideo } from '../lib/convert';
+import VideoConvert from './VideoConvert';
 import { ErrorBox, Field, Modal, useApi, useToast } from './ui';
 
 export const RM_TEST = 'Sentadilla · 1RM estimado';
@@ -124,8 +126,7 @@ export function LVChart({ pts, fit, rm, height = 240, prev, label = 'VMC' }) {
 
 // Un vídeo: escala (diámetro del disco) + punto a seguir → trayectoria → repeticiones
 function BarAnalyzer({ file, title, onDone, onCancel }) {
-  const url = useMemo(() => URL.createObjectURL(file), [file]);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  const src = usePlayableVideo(file), url = src.url;
   const video = useRef(null), box = useRef(null), abort = useRef(null), drag = useRef(null);
   const [stage, setStage] = useState('load');
   const [mode, setMode] = useState('line'); // line | point
@@ -140,7 +141,7 @@ function BarAnalyzer({ file, title, onDone, onCancel }) {
   const [raw, setRaw] = useState(null); // trayectoria en píxeles y tiempos del vídeo
   const cS = useRef(null), cE = useRef(null);
   const [err, setErr] = useState(null);
-  const onMeta = () => { try { video.current.currentTime = Math.min(0.1, video.current.duration / 2); } catch { /* */ } setStage('calib'); };
+  const onMeta = () => { if (!src.checkMeta(video.current)) return; try { video.current.currentTime = Math.min(0.1, video.current.duration / 2); } catch { /* */ } setStage('calib'); };
   const P = e => { const r = box.current.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
   const down = e => { if (stage !== 'calib') return; e.preventDefault(); box.current.setPointerCapture?.(e.pointerId); const p = P(e); if (mode === 'line') { drag.current = p; setLine({ a: p, b: p }); } else { setPt(p); } };
   const move = e => { if (drag.current) setLine({ a: drag.current, b: P(e) }); };
@@ -196,9 +197,10 @@ function BarAnalyzer({ file, title, onDone, onCancel }) {
 
   return <div className="card jl-an">
     <div className="row between"><h3 style={{ margin: 0 }}>{title} · {file.name}</h3><button className="btn sm ghost" onClick={() => { if (abort.current) abort.current.aborted = true; onCancel(); }}>Cancelar</button></div>
-    <div className="jl-stage" style={{ display: stage === 'review' ? 'none' : undefined }}>
+    <VideoConvert src={src} />
+    <div className="jl-stage" style={{ display: stage === 'review' || src.state !== 'ok' ? 'none' : undefined }}>
       <div ref={box} className="jl-vid" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-        <video ref={video} src={url} muted playsInline preload="auto" onLoadedMetadata={onMeta} onError={() => setErr('Este navegador no puede abrir el vídeo.')} />
+        <video ref={video} src={url} muted playsInline preload="auto" onLoadedMetadata={onMeta} onError={src.fail} />
         <svg className="sq-ov" viewBox="0 0 1 1" preserveAspectRatio="none">
           {line && <line x1={line.a.x} y1={line.a.y} x2={line.b.x} y2={line.b.y} stroke="#2a78d6" strokeWidth="0.006" />}
           {pt && <><circle cx={pt.x} cy={pt.y} r="0.012" fill="none" stroke="#e30613" strokeWidth="0.005" /><circle cx={pt.x} cy={pt.y} r="0.003" fill="#e30613" /></>}
